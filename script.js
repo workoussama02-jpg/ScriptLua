@@ -2416,6 +2416,7 @@ function createTicketCard(ticket) {
             <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full ${priorityColors[ticket.priority] || 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200'}">${ticket.priority}</span>
         </td>
         <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">${ticket.assigned_to_name || 'Non assigné'}</td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">${ticket.client_name || 'Client inconnu'}</td>
         <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">${new Date(ticket.created_at).toLocaleDateString('fr-FR')}</td>
         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium" onclick="event.stopPropagation()">${actionsHtml}</td>
     `;
