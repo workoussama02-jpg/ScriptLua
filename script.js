@@ -2663,20 +2663,30 @@ function createMessageElement(message) {
     // Determine if this message should be right-aligned (only current user's messages)
     const isRightAligned = message.sender_type === currentUserRole;
 
+    // Create sender info element
+    const senderInfo = document.createElement('div');
+    senderInfo.className = 'sender-info flex items-center space-x-2 mb-1';
+    senderInfo.innerHTML = `
+        <span class="text-sm font-medium text-slate-700 dark:text-slate-300">${message.sender_name || 'Utilisateur'}</span>
+        <span class="text-xs px-2 py-0.5 rounded-full ${roleConfig.badgeClass} text-white">${roleConfig.label}</span>
+    `;
+
     if (isRightAligned) {
         // Right-aligned bubble for current user's messages
         messageDiv.className = 'message-bubble user';
         const avatarHtml = message.sender_avatar
-            ? `<img src="${message.sender_avatar}" alt="Avatar" class="w-6 h-6 rounded-full object-cover" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />`
-            : `<div class="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0"><span class="text-xs">${roleConfig.icon}</span></div>`;
+            ? `<img src="${message.sender_avatar}" alt="Avatar" class="w-10 h-10 rounded-full object-cover" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />`
+            : `<div class="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0"><span class="text-sm">${roleConfig.icon}</span></div>`;
 
         messageDiv.innerHTML = `
-            <div class="flex items-end space-x-2">
-                <div class="flex-1"></div>
-                <div class="bg-blue-500 text-white px-4 py-2 rounded-2xl rounded-br-md max-w-xs shadow-lg">
-                    <p class="text-sm">${message.content}</p>
+            <div class="flex flex-col items-end space-y-1">
+                ${senderInfo.outerHTML}
+                <div class="flex items-end space-x-2">
+                    <div class="bg-blue-500 text-white px-4 py-3 rounded-2xl rounded-br-md max-w-md shadow-lg">
+                        <p class="text-sm">${message.content}</p>
+                    </div>
+                    ${avatarHtml}
                 </div>
-                ${avatarHtml}
             </div>
             <div class="text-right text-xs text-gray-500 mt-1">${timeString}</div>
         `;
@@ -2685,17 +2695,20 @@ function createMessageElement(message) {
         messageDiv.className = 'message-bubble other';
         const bubbleClass = 'bg-white border border-gray-200 text-gray-900';
         const avatarHtml = message.sender_avatar
-            ? `<img src="${message.sender_avatar}" alt="Avatar" class="w-6 h-6 rounded-full object-cover" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />`
-            : `<div class="w-6 h-6 ${roleConfig.bgColor} rounded-full flex items-center justify-center flex-shrink-0"><span class="text-xs">${roleConfig.icon}</span></div>`;
+            ? `<img src="${message.sender_avatar}" alt="Avatar" class="w-10 h-10 rounded-full object-cover" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />`
+            : `<div class="w-10 h-10 ${roleConfig.bgColor} rounded-full flex items-center justify-center flex-shrink-0"><span class="text-sm">${roleConfig.icon}</span></div>`;
 
         messageDiv.innerHTML = `
-            <div class="flex items-end space-x-2">
-                ${avatarHtml}
-                <div class="${bubbleClass} px-4 py-2 rounded-2xl rounded-bl-md max-w-xs shadow-sm">
-                    <p class="text-sm">${message.content}</p>
+            <div class="flex flex-col items-start space-y-1">
+                ${senderInfo.outerHTML}
+                <div class="flex items-end space-x-2">
+                    ${avatarHtml}
+                    <div class="${bubbleClass} px-4 py-3 rounded-2xl rounded-bl-md max-w-md shadow-sm">
+                        <p class="text-sm">${message.content}</p>
+                    </div>
                 </div>
             </div>
-            <div class="text-left text-xs text-gray-500 mt-1 ml-8">${timeString}</div>
+            <div class="text-left text-xs text-gray-500 mt-1 ml-12">${timeString}</div>
         `;
     }
 
@@ -2709,19 +2722,22 @@ function getRoleConfig(role) {
             icon: '👤',
             label: 'Client',
             color: '#6366f1',
-            bgColor: 'bg-blue-100'
+            bgColor: 'bg-blue-100',
+            badgeClass: 'bg-blue-500'
         },
         moderator: {
             icon: '🛡️',
             label: 'Modérateur',
             color: '#f59e0b',
-            bgColor: 'bg-orange-100'
+            bgColor: 'bg-orange-100',
+            badgeClass: 'bg-orange-500'
         },
         admin: {
             icon: '👑',
             label: 'Admin',
             color: '#ef4444',
-            bgColor: 'bg-red-100'
+            bgColor: 'bg-red-100',
+            badgeClass: 'bg-red-500'
         }
     };
     return configs[role] || configs.client;
@@ -2739,16 +2755,25 @@ function showTypingIndicator() {
     const typingDiv = document.createElement('div');
     typingDiv.className = 'message-bubble other typing-indicator';
 
+    // Get role config for the typing indicator (assuming it's from staff)
+    const roleConfig = getRoleConfig('moderator'); // Default to moderator for typing indicator
+
     typingDiv.innerHTML = `
-        <div class="flex items-end space-x-2">
-            <div class="w-6 h-6 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0">
-                <span class="text-xs">🛡️</span>
+        <div class="flex flex-col space-y-1">
+            <div class="flex items-center space-x-2">
+                <span class="text-xs font-medium text-gray-600">${roleConfig.label}</span>
+                <span class="px-2 py-0.5 text-xs rounded-full ${roleConfig.badgeClass}">${roleConfig.badge}</span>
             </div>
-            <div class="bg-gray-100 px-4 py-2 rounded-2xl rounded-bl-md">
-                <div class="typing-dots">
-                    <span></span>
-                    <span></span>
-                    <span></span>
+            <div class="flex items-end space-x-2">
+                <div class="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0">
+                    <span class="text-sm">🛡️</span>
+                </div>
+                <div class="bg-gray-100 px-4 py-2 rounded-2xl rounded-bl-md max-w-md">
+                    <div class="typing-dots">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -2823,48 +2848,6 @@ async function sendMessage() {
         messageInput.disabled = false;
         if (sendBtn) sendBtn.disabled = false;
         messageInput.focus();
-    }
-}
-
-// Show typing indicator
-function showTypingIndicator() {
-    const messagesContainer = document.getElementById('chat-messages');
-    if (!messagesContainer) return;
-
-    // Remove existing typing indicator
-    const existingTyping = messagesContainer.querySelector('.typing-indicator');
-    if (existingTyping) return;
-
-    const typingDiv = document.createElement('div');
-    typingDiv.className = 'message-bubble other typing-indicator';
-
-    typingDiv.innerHTML = `
-        <div class="flex items-end space-x-2">
-            <div class="w-6 h-6 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0">
-                <span class="text-xs">🛡️</span>
-            </div>
-            <div class="bg-gray-100 px-4 py-2 rounded-2xl rounded-bl-md">
-                <div class="typing-dots">
-                    <span></span>
-                    <span></span>
-                    <span></span>
-                </div>
-            </div>
-        </div>
-    `;
-
-    messagesContainer.appendChild(typingDiv);
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
-}
-
-// Hide typing indicator
-function hideTypingIndicator() {
-    const messagesContainer = document.getElementById('chat-messages');
-    if (!messagesContainer) return;
-
-    const typingIndicator = messagesContainer.querySelector('.typing-indicator');
-    if (typingIndicator) {
-        typingIndicator.remove();
     }
 }
 
