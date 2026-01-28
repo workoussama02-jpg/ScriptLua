@@ -2660,11 +2660,11 @@ function createMessageElement(message) {
     // Get role-specific icon and styling
     const roleConfig = getRoleConfig(message.sender_type);
 
-    // Determine if this message should be right-aligned (admin messages are always right-aligned)
-    const isRightAligned = message.sender_type === 'admin' || message.sender_type === currentUserRole;
+    // Determine if this message should be right-aligned (only current user's messages)
+    const isRightAligned = message.sender_type === currentUserRole;
 
     if (isRightAligned) {
-        // Right-aligned bubble for admin messages and current user
+        // Right-aligned bubble for current user's messages
         messageDiv.className = 'message-bubble user';
         const avatarHtml = message.sender_avatar
             ? `<img src="${message.sender_avatar}" alt="Avatar" class="w-6 h-6 rounded-full object-cover" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />`
