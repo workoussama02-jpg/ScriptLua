@@ -2122,6 +2122,8 @@ function initializeAdminUI() {
     loadAdminStats();
     loadUsersList();
     initializeAdminFilters();
+    // Initialize search functionality
+    initializeSearch();
 
     // Refresh stats when window regains focus (in case moderators changed availability)
     window.addEventListener('focus', () => {
@@ -3801,21 +3803,20 @@ function filterTickets(searchTerm, role) {
     rows.forEach(row => {
         if (row.classList.contains('empty-state')) return; // Skip empty state row
 
-        const titleCell = row.querySelector('td:nth-child(2)');
-        const statusCell = row.querySelector('td:nth-child(3)');
-        const priorityCell = row.querySelector('td:nth-child(4)');
+        // Search through all table cells except the last one (Actions column)
+        const cells = row.querySelectorAll('td');
+        let matches = false;
 
-        if (titleCell && statusCell && priorityCell) {
-            const title = titleCell.textContent.toLowerCase();
-            const status = statusCell.textContent.toLowerCase();
-            const priority = priorityCell.textContent.toLowerCase();
-
-            const matches = title.includes(searchTerm) ||
-                          status.includes(searchTerm) ||
-                          priority.includes(searchTerm);
-
-            row.style.display = matches || searchTerm === '' ? '' : 'none';
+        // Check all cells except the last one (Actions)
+        for (let i = 0; i < cells.length - 1; i++) {
+            const cellText = cells[i].textContent.toLowerCase().trim();
+            if (cellText.includes(searchTerm)) {
+                matches = true;
+                break;
+            }
         }
+
+        row.style.display = matches || searchTerm === '' ? '' : 'none';
     });
 }
 
