@@ -119,6 +119,54 @@
         .modal.hidden {
             display: none;
         }
+
+        /* Chat Bubble Styles */
+        .message-bubble {
+            max-width: 70%;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        .message-bubble.user {
+            margin-left: auto;
+            margin-right: 0;
+        }
+
+        .message-bubble.other {
+            margin-right: auto;
+            margin-left: 0;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .typing-dots {
+            display: inline-flex;
+            gap: 4px;
+        }
+
+        .typing-dots span {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #6b7280;
+            animation: typing 1.4s infinite;
+        }
+
+        .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes typing {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-8px); }
+        }
     </style>
 </head>
 <body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 min-h-screen transition-colors duration-200">
@@ -560,33 +608,66 @@
 
 <!-- Chat Modal -->
 <div class="modal hidden" id="chat-modal">
-<div class="bg-white dark:bg-slate-800 rounded-xl max-w-2xl w-full mx-4 h-96 flex flex-col">
-<div class="p-6 border-b border-slate-200 dark:border-slate-700">
-<div class="flex items-center justify-between">
-<div>
-<h3 class="text-lg font-semibold text-slate-800 dark:text-white" id="chat-ticket-title">Ticket #123</h3>
-<span class="text-sm text-slate-600 dark:text-slate-400" id="chat-ticket-status">En attente...</span>
-</div>
-<button class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 close-modal" id="closeChatModal">
-<span class="material-icons-round">close</span>
-</button>
-</div>
-</div>
-<div class="flex-1 p-6 overflow-y-auto" id="chat-messages">
-<!-- Messages will be loaded here -->
-</div>
-<div class="p-6 border-t border-slate-200 dark:border-slate-700">
-<div class="typing-indicator hidden" id="typingIndicator">
-<span class="text-sm text-slate-500 dark:text-slate-400">Quelqu'un est en train d'écrire...</span>
-</div>
-<form id="messageForm" class="flex space-x-3">
-<input type="text" id="messageInput" class="flex-1 px-3 py-2 border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="Tapez votre message..." required>
-<button type="submit" class="bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-lg font-medium transition-colors flex items-center">
-<span class="material-icons-round text-sm">send</span>
-</button>
-</form>
-</div>
-</div>
+  <div class="modal-content bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[600px] flex flex-col overflow-hidden">
+
+    <!-- Header -->
+    <div class="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-4 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
+          <span class="material-icons-round text-lg">support_agent</span>
+        </div>
+        <div>
+          <h3 class="font-semibold" id="chat-ticket-title">Support Chat</h3>
+          <p class="text-sm opacity-90"><span id="chat-ticket-status">En cours</span></p>
+        </div>
+      </div>
+      <div class="flex items-center space-x-2">
+        <button class="p-2 hover:bg-white/10 rounded-lg transition-colors">
+          <span class="material-icons-round">minimize</span>
+        </button>
+        <button class="p-2 hover:bg-white/10 rounded-lg transition-colors close-modal" id="closeChatModal">
+          <span class="material-icons-round">close</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Messages Area -->
+    <div class="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50" id="chat-messages">
+      <!-- Messages will be loaded here -->
+      <div class="empty-state">
+        <div class="text-center py-12">
+          <div class="text-6xl mb-4">💬</div>
+          <h4 class="text-lg font-medium text-slate-800 mb-2">Aucun message</h4>
+          <p class="text-slate-600">Commencez la conversation en envoyant un message ci-dessous.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input Area -->
+    <div class="border-t border-gray-200 bg-white p-4">
+      <div class="flex items-end space-x-3">
+        <button class="flex-shrink-0 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors" id="fileUploadBtn">
+          <span class="material-icons-round">attach_file</span>
+        </button>
+        <input type="file" id="fileInput" class="hidden" accept="image/*,.pdf,.doc,.docx,.txt" multiple>
+        <div class="flex-1 relative">
+          <textarea
+            id="messageInput"
+            class="w-full px-4 py-3 border border-gray-300 rounded-2xl bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+            placeholder="Tapez votre message..."
+            rows="1"
+            style="min-height: 44px; max-height: 120px;"
+          ></textarea>
+          <div class="absolute bottom-2 right-3 text-xs text-gray-400" id="charCounter">0/1000</div>
+        </div>
+        <button class="flex-shrink-0 bg-blue-500 hover:bg-blue-600 text-white px-4 py-3 rounded-2xl font-medium transition-colors flex items-center space-x-2" id="sendBtn">
+          <span class="material-icons-round">send</span>
+          <span class="hidden sm:inline">Envoyer</span>
+        </button>
+      </div>
+    </div>
+
+  </div>
 </div>
 
 <!-- User Management Modal (Admin only) -->

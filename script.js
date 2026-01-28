@@ -2624,8 +2624,11 @@ function displayChatMessages(messages) {
     if (messages.length === 0) {
         messagesContainer.innerHTML = `
             <div class="empty-state">
-                <h4>Aucun message</h4>
-                <p>Commencez la conversation en envoyant un message.</p>
+                <div class="text-center py-12">
+                    <div class="text-6xl mb-4">💬</div>
+                    <h4 class="text-lg font-medium text-slate-800 dark:text-white mb-2">Aucun message</h4>
+                    <p class="text-slate-600 dark:text-slate-400">Commencez la conversation en envoyant un message ci-dessous.</p>
+                </div>
             </div>
         `;
         return;
@@ -2636,30 +2639,158 @@ function displayChatMessages(messages) {
         messagesContainer.appendChild(messageElement);
     });
 
-    // Scroll to bottom
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    // Scroll to bottom with smooth animation
+    setTimeout(() => {
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }, 100);
 }
 
 // Create message element
 function createMessageElement(message) {
     const messageDiv = document.createElement('div');
-    messageDiv.className = `message ${message.sender_type}`;
+    messageDiv.className = 'message-bubble';
 
-    messageDiv.innerHTML = `
-        <div class="message-sender">${message.sender_name}</div>
-        <div class="message-content">${message.content}</div>
-        <div class="message-time">${new Date(message.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</div>
-    `;
+    const messageTime = new Date(message.created_at);
+    const timeString = messageTime.toLocaleTimeString('fr-FR', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+    });
+
+    // Get role-specific icon and styling
+    const roleConfig = getRoleConfig(message.sender_type);
+
+    // Determine if this message should be right-aligned (admin messages are always right-aligned)
+    const isRightAligned = message.sender_type === 'admin' || message.sender_type === currentUserRole;
+
+    if (isRightAligned) {
+        // Right-aligned bubble for admin messages and current user
+        messageDiv.className = 'message-bubble user';
+        messageDiv.innerHTML = `
+            <div class="flex items-end space-x-2">
+                <div class="flex-1"></div>
+                <div class="bg-blue-500 text-white px-4 py-2 rounded-2xl rounded-br-md max-w-xs shadow-lg">
+                    <p class="text-sm">${message.content}</p>
+                </div>
+                <div class="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                    <span class="text-xs">${roleConfig.icon}</span>
+                </div>
+            </div>
+            <div class="text-right text-xs text-gray-500 mt-1">${timeString}</div>
+        `;
+    } else {
+        // Left-aligned bubble for others
+        messageDiv.className = 'message-bubble other';
+        const bubbleClass = 'bg-white border border-gray-200 text-gray-900';
+
+        messageDiv.innerHTML = `
+            <div class="flex items-end space-x-2">
+                <div class="w-6 h-6 ${roleConfig.bgColor} rounded-full flex items-center justify-center flex-shrink-0">
+                    <span class="text-xs">${roleConfig.icon}</span>
+                </div>
+                <div class="${bubbleClass} px-4 py-2 rounded-2xl rounded-bl-md max-w-xs shadow-sm">
+                    <p class="text-sm">${message.content}</p>
+                </div>
+            </div>
+            <div class="text-left text-xs text-gray-500 mt-1 ml-8">${timeString}</div>
+        `;
+    }
 
     return messageDiv;
+}
+
+// Get role configuration for styling
+function getRoleConfig(role) {
+    const configs = {
+        client: {
+            icon: '👤',
+            label: 'Client',
+            color: '#6366f1',
+            bgColor: 'bg-blue-100'
+        },
+        moderator: {
+            icon: '🛡️',
+            label: 'Modérateur',
+            color: '#f59e0b',
+            bgColor: 'bg-orange-100'
+        },
+        admin: {
+            icon: '👑',
+            label: 'Admin',
+            color: '#ef4444',
+            bgColor: 'bg-red-100'
+        }
+    };
+    return configs[role] || configs.client;
+}
+
+// Show typing indicator
+function showTypingIndicator() {
+    const messagesContainer = document.getElementById('chat-messages');
+    if (!messagesContainer) return;
+
+    // Remove existing typing indicator
+    const existingTyping = messagesContainer.querySelector('.typing-indicator');
+    if (existingTyping) return;
+
+    const typingDiv = document.createElement('div');
+    typingDiv.className = 'message-bubble other typing-indicator';
+
+    typingDiv.innerHTML = `
+        <div class="flex items-end space-x-2">
+            <div class="w-6 h-6 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <span class="text-xs">🛡️</span>
+            </div>
+            <div class="bg-gray-100 px-4 py-2 rounded-2xl rounded-bl-md">
+                <div class="typing-dots">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            </div>
+        </div>
+    `;
+
+    messagesContainer.appendChild(typingDiv);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+// Hide typing indicator
+function hideTypingIndicator() {
+    const messagesContainer = document.getElementById('chat-messages');
+    if (!messagesContainer) return;
+
+    const typingIndicator = messagesContainer.querySelector('.typing-indicator');
+    if (typingIndicator) {
+        typingIndicator.remove();
+    }
+}
+
+// Show message details on hover/click
+function showMessageDetails(messageId, timestamp, senderType) {
+    // For now, just show a tooltip-like notification
+    const roleConfig = getRoleConfig(senderType);
+    showNotification(`Message de ${roleConfig.label} - ${timestamp}`, 'info');
 }
 
 // Send message
 async function sendMessage() {
     const messageInput = document.getElementById('messageInput');
     const content = messageInput.value.trim();
+    const maxLength = 1000;
 
     if (!content || !currentTicketId) return;
+
+    // Check character limit
+    if (content.length > maxLength) {
+        showNotification(`Message trop long (${content.length}/${maxLength})`, 'error');
+        return;
+    }
+
+    // Disable input and send button while sending
+    const sendBtn = document.getElementById('sendBtn');
+    messageInput.disabled = true;
+    if (sendBtn) sendBtn.disabled = true;
 
     try {
         const { error } = await supabaseClient
@@ -2674,39 +2805,146 @@ async function sendMessage() {
 
         if (error) throw error;
 
+        // Clear input and reset height
         messageInput.value = '';
+        messageInput.style.height = 'auto';
+        updateCharacterCounter();
+
         // Messages will be updated via real-time subscription
     } catch (error) {
         console.error('Error sending message:', error);
         showNotification('Erreur lors de l\'envoi du message', 'error');
+    } finally {
+        // Re-enable input and send button
+        messageInput.disabled = false;
+        if (sendBtn) sendBtn.disabled = false;
+        messageInput.focus();
     }
 }
 
-// Subscribe to real-time ticket messages
-function subscribeToTicketMessages(ticketId) {
-    // Unsubscribe from previous channel
-    if (chatChannel) {
-        supabaseClient.removeChannel(chatChannel);
+// Show typing indicator
+function showTypingIndicator() {
+    const messagesContainer = document.getElementById('chat-messages');
+    if (!messagesContainer) return;
+
+    // Remove existing typing indicator
+    const existingTyping = messagesContainer.querySelector('.typing-indicator');
+    if (existingTyping) return;
+
+    const typingDiv = document.createElement('div');
+    typingDiv.className = 'message-bubble other typing-indicator';
+
+    typingDiv.innerHTML = `
+        <div class="flex items-end space-x-2">
+            <div class="w-6 h-6 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <span class="text-xs">🛡️</span>
+            </div>
+            <div class="bg-gray-100 px-4 py-2 rounded-2xl rounded-bl-md">
+                <div class="typing-dots">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            </div>
+        </div>
+    `;
+
+    messagesContainer.appendChild(typingDiv);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+// Hide typing indicator
+function hideTypingIndicator() {
+    const messagesContainer = document.getElementById('chat-messages');
+    if (!messagesContainer) return;
+
+    const typingIndicator = messagesContainer.querySelector('.typing-indicator');
+    if (typingIndicator) {
+        typingIndicator.remove();
+    }
+}
+
+// Character counter for message input
+function updateCharacterCounter() {
+    const messageInput = document.getElementById('messageInput');
+    const charCounter = document.getElementById('charCounter');
+    const maxLength = 1000;
+
+    if (!messageInput || !charCounter) return;
+
+    const currentLength = messageInput.value.length;
+    charCounter.textContent = `${currentLength}/${maxLength}`;
+
+    // Update styling based on character count
+    charCounter.classList.remove('warning', 'danger');
+
+    if (currentLength > maxLength * 0.8) {
+        charCounter.classList.add('warning');
     }
 
-    chatChannel = supabaseClient
-        .channel(`ticket-${ticketId}`)
-        .on('postgres_changes', {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'messages',
-            filter: `ticket_id=eq.${ticketId}`
-        }, (payload) => {
-            const newMessage = payload.new;
-            const messagesContainer = document.getElementById('chat-messages');
+    if (currentLength > maxLength * 0.9) {
+        charCounter.classList.add('danger');
+    }
 
-            if (messagesContainer) {
-                const messageElement = createMessageElement(newMessage);
-                messagesContainer.appendChild(messageElement);
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
-            }
-        })
-        .subscribe();
+    // Disable send button if over limit
+    const sendBtn = document.getElementById('sendBtn');
+    if (sendBtn) {
+        sendBtn.disabled = currentLength > maxLength;
+    }
+}
+
+// Auto-resize textarea based on content
+function autoResizeTextarea() {
+    const messageInput = document.getElementById('messageInput');
+    if (!messageInput) return;
+
+    // Reset height to auto to get the correct scrollHeight
+    messageInput.style.height = 'auto';
+
+    // Set the height to the scrollHeight
+    const scrollHeight = messageInput.scrollHeight;
+    const minHeight = 48; // Minimum height
+    const maxHeight = 120; // Maximum height
+
+    const newHeight = Math.min(Math.max(scrollHeight, minHeight), maxHeight);
+    messageInput.style.height = newHeight + 'px';
+}
+
+// Handle file upload
+function handleFileUpload(files) {
+    if (!files || files.length === 0) return;
+
+    Array.from(files).forEach(file => {
+        // Validate file size (max 10MB)
+        const maxSize = 10 * 1024 * 1024; // 10MB
+        if (file.size > maxSize) {
+            showNotification(`Le fichier ${file.name} est trop volumineux (max 10MB)`, 'error');
+            return;
+        }
+
+        // Validate file type
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf', 'text/plain', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+        if (!allowedTypes.includes(file.type)) {
+            showNotification(`Type de fichier non supporté: ${file.name}`, 'error');
+            return;
+        }
+
+        // For now, just show a notification (file upload would need backend implementation)
+        showNotification(`Fichier "${file.name}" sélectionné. L'upload de fichiers sera bientôt disponible.`, 'info');
+
+        // TODO: Implement actual file upload to Supabase Storage
+        // This would involve:
+        // 1. Upload file to Supabase Storage
+        // 2. Get public URL
+        // 3. Send message with file attachment
+        // 4. Display file preview in chat
+    });
+
+    // Clear the file input
+    const fileInput = document.getElementById('fileInput');
+    if (fileInput) {
+        fileInput.value = '';
+    }
 }
 
 // Subscribe to real-time ticket updates (for all users)
@@ -2732,6 +2970,41 @@ function subscribeToTicketUpdates() {
                 console.log('🎫 Ticket update affects current user, reloading tickets...');
                 loadTickets();
             }
+        })
+        .subscribe();
+}
+
+// Subscribe to real-time messages for a specific ticket
+function subscribeToTicketMessages(ticketId) {
+    // Unsubscribe from previous chat channel
+    if (chatChannel) {
+        supabaseClient.removeChannel(chatChannel);
+    }
+
+    chatChannel = supabaseClient
+        .channel(`ticket-messages-${ticketId}`)
+        .on('postgres_changes', {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'messages',
+            filter: `ticket_id=eq.${ticketId}`
+        }, (payload) => {
+            console.log('💬 New message received:', payload.new);
+
+            // Add the new message to the chat
+            const messageElement = createMessageElement(payload.new);
+            const messagesContainer = document.getElementById('chat-messages');
+            if (messagesContainer) {
+                messagesContainer.appendChild(messageElement);
+
+                // Scroll to bottom
+                setTimeout(() => {
+                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                }, 100);
+            }
+
+            // Hide typing indicator if it was showing
+            hideTypingIndicator();
         })
         .subscribe();
 }
@@ -3379,22 +3652,52 @@ function initializeModalHandlers() {
 
     const messageInput = document.getElementById('messageInput');
     if (messageInput && !messageInput.hasAttribute('data-listener-attached')) {
+        // Character counter
+        messageInput.addEventListener('input', function() {
+            updateCharacterCounter();
+            autoResizeTextarea();
+        });
+
+        // Enter to send (Shift+Enter for new line)
         messageInput.addEventListener('keypress', function(e) {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 sendMessage();
             }
         });
+
+        // Initialize on focus
+        messageInput.addEventListener('focus', function() {
+            updateCharacterCounter();
+            autoResizeTextarea();
+        });
+
         messageInput.setAttribute('data-listener-attached', 'true');
     }
 
-    const sendBtn = document.querySelector('.send-btn');
+    const sendBtn = document.querySelector('#sendBtn');
     if (sendBtn && !sendBtn.hasAttribute('data-listener-attached')) {
         sendBtn.addEventListener('click', function(e) {
-            e.preventDefault(); // Prevent any default button behavior
+            e.preventDefault();
             sendMessage();
         });
         sendBtn.setAttribute('data-listener-attached', 'true');
+    }
+
+    // File upload functionality
+    const fileUploadBtn = document.getElementById('fileUploadBtn');
+    const fileInput = document.getElementById('fileInput');
+
+    if (fileUploadBtn && fileInput && !fileUploadBtn.hasAttribute('data-listener-attached')) {
+        fileUploadBtn.addEventListener('click', function() {
+            fileInput.click();
+        });
+
+        fileInput.addEventListener('change', function(e) {
+            handleFileUpload(e.target.files);
+        });
+
+        fileUploadBtn.setAttribute('data-listener-attached', 'true');
     }
 
     // Mark as initialized
