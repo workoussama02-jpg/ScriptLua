@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nos Scripts - Script Lua</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Promotional Banner -->
+    <div class="promo-banner">
+        <div class="container">
+            <div class="banner-marquee">
+                <p class="banner-text">
+                    <img src="img/snowbot.png" alt="Snowbot" class="banner-logo">
+                    <span class="banner-highlight">Partenaire Officiel</span> | 
+                    Créez un nouveau compte sur <a href="https://snowbot.eu/" target="_blank" class="promo-code snowbot-link">snowbot.eu</a> avec le code 
+                    <span class="promo-code">CLARTEK</span> 
+                    <span class="copy-icon" onclick="copyPromoCode()">📋</span>
+                    et bénéficiez de plusieurs scripts <span style="color: #f59e0b; font-weight: 700;">GRATUITEMENT</span>
+                </p>
+                <p class="banner-text">
+                    <img src="img/snowbot.png" alt="Snowbot" class="banner-logo">
+                    <span class="banner-highlight">Partenaire Officiel</span> | 
+                    Créez un nouveau compte sur <a href="https://snowbot.eu/" target="_blank" class="promo-code snowbot-link">snowbot.eu</a> avec le code 
+                    <span class="promo-code">CLARTEK</span> 
+                    <span class="copy-icon" onclick="copyPromoCode()">📋</span>
+                    et bénéficiez de plusieurs scripts <span style="color: #f59e0b; font-weight: 700;">GRATUITEMENT</span>
+                </p>
+                <p class="banner-text">
+                    <img src="img/snowbot.png" alt="Snowbot" class="banner-logo">
+                    <span class="banner-highlight">Partenaire Officiel</span> | 
+                    Créez un nouveau compte sur <a href="https://snowbot.eu/" target="_blank" class="promo-code snowbot-link">snowbot.eu</a> avec le code 
+                    <span class="promo-code">CLARTEK</span> 
+                    <span class="copy-icon" onclick="copyPromoCode()">📋</span>
+                    et bénéficiez de plusieurs scripts <span style="color: #f59e0b; font-weight: 700;">GRATUITEMENT</span>
+                </p>
+                <p class="banner-text">
+                    <img src="img/snowbot.png" alt="Snowbot" class="banner-logo">
+                    <span class="banner-highlight">Partenaire Officiel</span> | 
+                    Créez un nouveau compte sur <a href="https://snowbot.eu/" target="_blank" class="promo-code snowbot-link">snowbot.eu</a> avec le code 
+                    <span class="promo-code">CLARTEK</span> 
+                    <span class="copy-icon" onclick="copyPromoCode()">📋</span>
+                    et bénéficiez de plusieurs scripts <span style="color: #f59e0b; font-weight: 700;">GRATUITEMENT</span>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <nav class="navbar">
+        <div class="container">
+            <div class="logo">
+                <a href="index.html">
+                    <img src="img/logo.png" alt="Script Lua Logo" class="logo-img">
+                </a>
+            </div>
+            <ul class="nav-menu">
+                <li><a href="index.html">Accueil</a></li>
+                <li><a href="nos-scripts.html" class="active">Nos Scripts</a></li>
+                <li><a href="power-leveling.html">Power Leveling</a></li>
+                <li><a href="proxy.html">Proxy</a></li>
+                <li><a href="espace-client.html">Espace Client</a></li>
+                <li><a href="a-propos.html">À Propos</a></li>
+            </ul>
+            <a href="https://discord.gg/C5FP62dRU3" target="_blank" class="discord-btn">Discord</a>
+            <div class="hamburger">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+        </div>
+    </nav>
+
+    <section class="page-header">
+        <div class="container">
+            <h1>Nos Scripts Premium</h1>
+            <p>Scripts optimisés et régulièrement mis à jour</p>
+        </div>
+    </section>
+
+    <!-- Scripts List Section -->
+    <section class="scripts-section" id="scriptsListSection">
+        <div class="container">
+            <div class="filters">
+                <button class="filter-btn active" data-filter="all">Tous</button>
+                <button class="filter-btn" data-filter="recolte">Récolte</button>
+                <button class="filter-btn" data-filter="combat">Combat</button>
+                <button class="filter-btn" data-filter="quetes">Quêtes</button>
+                <button class="filter-btn" data-filter="prive">Privé</button>
+                <button class="filter-btn" data-filter="autres">Autres</button>
+            </div>
+
+            <div class="scripts-grid" id="scriptsContainer">
+                <!-- Scripts will be loaded automatically from script.js -->
+            </div>
+        </div>
+    </section>
+
+    <!-- Script Detail Section (Hidden by default) -->
+    <section class="script-detail-section" id="scriptDetailSection" style="display: none;">
+        <div class="container">
+            <button class="back-btn" id="backToScriptsBtn">← Retour aux Scripts</button>
+            
+            <div class="script-detail-layout">
+                <!-- Main Content -->
+                <div class="script-main-content">
+                    <!-- Large Image -->
+                    <div class="script-image-large" id="detailImage">
+                        <img src="" alt="Script Image">
+                    </div>
+                    
+                    <!-- Script Info -->
+                    <div class="script-info-header">
+                        <h1 id="detailTitle">Script Title</h1>
+                        <div class="script-meta">
+                            <span class="meta-price" id="detailPrice">€0.00</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Tabs Section -->
+                    <div class="script-tabs">
+                        <div class="tabs-header">
+                            <button class="tab-btn active" data-tab="description">Description</button>
+                            <button class="tab-btn" data-tab="instructions">Instructions</button>
+                            <button class="tab-btn" data-tab="formules">Formules</button>
+                        </div>
+                        
+                        <div class="tabs-content">
+                            <!-- Description Tab -->
+                            <div class="tab-panel active" id="descriptionTab">
+                                <h3>À propos de ce script</h3>
+                                <div id="detailDescription"></div>
+                            </div>
+                            
+                            <!-- Instructions Tab -->
+                            <div class="tab-panel" id="instructionsTab">
+                                <h3>Instructions d'utilisation</h3>
+                                <div id="detailInstructions"></div>
+                            </div>
+                            
+                            <!-- Formules Tab -->
+                            <div class="tab-panel" id="formulesTab">
+                                <h3>Prix et formules</h3>
+                                <div id="detailFormules"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Sidebar -->
+                <aside class="script-sidebar">
+                    <div class="discord-contact-box">
+                        <h3>🛒 Acheter ce script</h3>
+                        <p>Cliquez sur le bouton ci-dessous pour acheter ce script sur notre marketplace</p>
+                        <button class="btn-discord" id="contactDiscordBtn">Acheter</button>
+                        <p class="discord-note">Paiement sécurisé et livraison instantanée</p>
+                    </div>
+                    
+                    <div class="seller-card">
+                        <h3>Vendeur</h3>
+                        <div class="seller-info">
+                            <div class="seller-avatar">
+                                <img src="img/clartek.png" alt="Clartek">
+                            </div>
+                            <div class="seller-name">Clartek</div>
+                        </div>
+                    </div>
+                </aside>
+            </div>
+        </div>
+    </section>
+
+    <section class="features-info">
+        <div class="container">
+            <h2>Pourquoi choisir nos scripts ?</h2>
+            <div class="info-grid">
+                <div class="info-item">
+                    <h3>🔒 Sécurisé</h3>
+                    <p>Protection anti-détection avancée</p>
+                </div>
+                <div class="info-item">
+                    <h3>🔄 Mises à jour</h3>
+                    <p>Mises à jour régulières incluses</p>
+                </div>
+                <div class="info-item">
+                    <h3>💬 Support</h3>
+                    <p>Assistance technique disponible</p>
+                </div>
+                <div class="info-item">
+                    <h3>⚡ Performance</h3>
+                    <p>Scripts optimisés et rapides</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer style="background: linear-gradient(180deg, #f8f9fa 0%, #e9ecef 100%); color: #212529; padding: 4rem 0 2rem; border-top: 1px solid rgba(99, 102, 241, 0.2); position: relative; overflow: hidden;">
+        <!-- Decorative background elements -->
+        <div style="position: absolute; top: -50%; right: -10%; width: 500px; height: 500px; background: radial-gradient(circle, rgba(99, 102, 241, 0.08) 0%, transparent 70%); border-radius: 50%; pointer-events: none;"></div>
+        <div style="position: absolute; bottom: -30%; left: -5%; width: 400px; height: 400px; background: radial-gradient(circle, rgba(99, 102, 241, 0.05) 0%, transparent 70%); border-radius: 50%; pointer-events: none;"></div>
+        
+        <div class="container" style="position: relative; z-index: 1;">
+            <!-- Main footer content -->
+            <div style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 3rem; margin-bottom: 3rem;">
+                <!-- Brand section -->
+                <div>
+                    <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem;">
+                        <img src="img/logo.png" alt="Script Lua Logo" style="height: 40px; width: auto;">
+                        <h3 style="margin: 0; font-size: 1.5rem; font-weight: 700; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">Script Lua</h3>
+                    </div>
+                    <p style="color: #6c757d; line-height: 1.6; margin-bottom: 1.5rem; max-width: 300px;">
+                        Votre partenaire gaming de confiance pour des scripts performants et un service premium.
+                    </p>
+                    <a href="https://discord.gg/C5FP62dRU3" target="_blank" 
+                       style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem; 
+                              background: linear-gradient(135deg, #5865F2 0%, #4752C4 100%); 
+                              border-radius: 50px; text-decoration: none; color: white; font-weight: 600; 
+                              transition: transform 0.3s ease, box-shadow 0.3s ease; box-shadow: 0 4px 15px rgba(88, 101, 242, 0.3);"
+                       onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(88, 101, 242, 0.4)';"
+                       onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 15px rgba(88, 101, 242, 0.3)';">
+                        <span style="font-size: 1.2rem;">💬</span>
+                        <span>Rejoindre Discord</span>
+                    </a>
+                </div>
+                
+                <!-- Quick links -->
+                <div>
+                    <h4 style="margin: 0 0 1.25rem 0; font-size: 1.1rem; font-weight: 600; color: #212529;">Navigation</h4>
+                    <ul style="list-style: none; padding: 0; margin: 0;">
+                        <li style="margin-bottom: 0.75rem;"><a href="index.html" style="color: #6c757d; text-decoration: none; transition: color 0.3s ease;" onmouseover="this.style.color='#6366f1'" onmouseout="this.style.color='#6c757d'">🏠 Accueil</a></li>
+                        <li style="margin-bottom: 0.75rem;"><a href="nos-scripts.html" style="color: #6c757d; text-decoration: none; transition: color 0.3s ease;" onmouseover="this.style.color='#6366f1'" onmouseout="this.style.color='#6c757d'">📜 Nos Scripts</a></li>
+                        <li style="margin-bottom: 0.75rem;"><a href="power-leveling.html" style="color: #6c757d; text-decoration: none; transition: color 0.3s ease;" onmouseover="this.style.color='#6366f1'" onmouseout="this.style.color='#6c757d'">⚡️ Power Leveling</a></li>
+                        <li style="margin-bottom: 0.75rem;"><a href="proxy.html" style="color: #6c757d; text-decoration: none; transition: color 0.3s ease;" onmouseover="this.style.color='#6366f1'" onmouseout="this.style.color='#6c757d'">🌐 Proxy</a></li>
+                    </ul>
+                </div>
+                
+                <!-- Support links -->
+                <div>
+                    <h4 style="margin: 0 0 1.25rem 0; font-size: 1.1rem; font-weight: 600; color: #212529;">Support</h4>
+                    <ul style="list-style: none; padding: 0; margin: 0;">
+                        <li style="margin-bottom: 0.75rem;"><a href="espace-client.html" style="color: #6c757d; text-decoration: none; transition: color 0.3s ease;" onmouseover="this.style.color='#6366f1'" onmouseout="this.style.color='#6c757d'">👤 Espace Client</a></li>
+                        <li style="margin-bottom: 0.75rem;"><a href="a-propos.html" style="color: #6c757d; text-decoration: none; transition: color 0.3s ease;" onmouseover="this.style.color='#6366f1'" onmouseout="this.style.color='#6c757d'">ℹ️ À Propos</a></li>
+                        <li style="margin-bottom: 0.75rem;"><a href="https://discord.gg/C5FP62dRU3" target="_blank" style="color: #6c757d; text-decoration: none; transition: color 0.3s ease;" onmouseover="this.style.color='#6366f1'" onmouseout="this.style.color='#6c757d'">💬 Contact</a></li>
+                    </ul>
+                </div>
+                
+                <!-- Legal & Social -->
+                <div>
+                    <h4 style="margin: 0 0 1.25rem 0; font-size: 1.1rem; font-weight: 600; color: #212529;">Liens utiles</h4>
+                    <ul style="list-style: none; padding: 0; margin: 0;">
+                        <li style="margin-bottom: 0.75rem;"><a href="https://snowbot.eu/dashboard/marketplace/seller/8" style="color: #6c757d; text-decoration: none; transition: color 0.3s ease;" onmouseover="this.style.color='#6366f1'" onmouseout="this.style.color='#6c757d'" target="_blank" rel="noopener noreferrer">📄 Boutique Script</a></li>
+                        <li style="margin-bottom: 0.75rem;"><a href="https://d3gate.snowbot.eu/profile/apkwHd8lX8ZOOqdAGuoY8syc13l1" style="color: #6c757d; text-decoration: none; transition: color 0.3s ease;" onmouseover="this.style.color='#6366f1'" onmouseout="this.style.color='#6c757d'" target="_blank" rel="noopener noreferrer">🔒 Boutique PL</a></li>
+                    </ul>
+                </div>
+            </div>
+            
+            <!-- Divider -->
+            <div style="height: 1px; background: linear-gradient(90deg, transparent 0%, rgba(99, 102, 241, 0.2) 50%, transparent 100%); margin-bottom: 2rem;"></div>
+            
+            <!-- Bottom section -->
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                <p style="margin: 0; color: #6c757d; font-size: 0.9rem;">
+                    © 2025 Script Lua. Tous droits réservés. Made with ❤️ for ScriptLUA Community.
+                </p>
+                <div style="display: flex; gap: 1rem; align-items: center;">
+                    <a href="https://snowbot.eu/" target="_blank" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; background: white; border: 1px solid #dee2e6; border-radius: 20px; text-decoration: none; color: #495057; transition: all 0.3s ease; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);" onmouseover="this.style.borderColor='#6366f1'; this.style.boxShadow='0 4px 12px rgba(99, 102, 241, 0.15)';" onmouseout="this.style.borderColor='#dee2e6'; this.style.boxShadow='0 2px 5px rgba(0, 0, 0, 0.05)';">
+                        <img src="img/snowbot.png" alt="Snowbot" style="height: 20px; width: auto;">
+                        <span style="font-size: 0.85rem; font-weight: 600;">Partenaire Snowbot</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>

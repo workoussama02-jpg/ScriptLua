@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SCRIPT_TITLE - Gaming Community</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container nav-container">
+            <div class="logo"><h2>🎮 Gaming Community</h2></div>
+            <ul class="nav-menu">
+                <li><a href="index.html">Accueil</a></li>
+                <li><a href="nos-scripts.html">Nos Scripts</a></li>
+                <li><a href="power-leveling.html">Power Leveling</a></li>
+                <li><a href="proxy.html">Proxy</a></li>
+                <li><a href="espace-client.html">Espace Client</a></li>
+                <li><a href="a-propos.html">À Propos</a></li>
+            </ul>
+            <div class="hamburger"><span></span><span></span><span></span></div>
+        </div>
+    </nav>
+
+    <section class="script-detail-page">
+        <div class="container">
+            <a href="nos-scripts.html" class="back-btn">← Retour aux Scripts</a>
+            
+            <div class="script-detail-layout">
+                <div class="script-main-section">
+                    <div class="script-img-large"SCRIPT_IMAGE></div>
+                    
+                    <h1 class="script-name">SCRIPT_NAME</h1>
+                    <p class="script-seller">par <span>Community Team</span></p>
+                    
+                    <div class="script-tabs-container">
+                        <div class="script-tab-btns">
+                            <button class="tab-btn active" onclick="openTab(event, 'desc')">Description</button>
+                            <button class="tab-btn" onclick="openTab(event, 'inst')">Instructions</button>
+                            <button class="tab-btn" onclick="openTab(event, 'form')">Formules</button>
+                        </div>
+                        
+                        <div id="desc" class="tab-panel active">
+                            <p>SCRIPT_DESC</p>
+                        </div>
+                        
+                        <div id="inst" class="tab-panel">
+                            <h3>📦 Installation</h3>
+                            <ol>
+                                <li>Contactez le vendeur sur Discord</li>
+                                <li>Téléchargez le script après paiement</li>
+                                <li>Placez-le dans votre dossier de scripts</li>
+                                <li>Redémarrez votre bot</li>
+                            </ol>
+                        </div>
+                        
+                        <div id="form" class="tab-panel">
+                            <div class="formule-item">
+                                <div class="formule-title">Permanent</div>
+                                <div class="formule-price">€SCRIPT_PRICE</div>
+                                <div class="formule-duration">1 mois</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="script-side-section">
+                    <div class="discord-box">
+                        <h3>💬 Acheter ce script</h3>
+                        <p>Pour acheter ce script, contactez le vendeur sur Discord.</p>
+                        <button class="btn-discord" onclick="contactDiscord()">Contacter sur Discord</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <h3>Gaming Community</h3>
+                    <p>Votre source de confiance pour les meilleurs scripts et services de gaming.</p>
+                </div>
+                <div class="footer-section">
+                    <h3>Liens Rapides</h3>
+                    <ul>
+                        <li><a href="nos-scripts.html">Nos Scripts</a></li>
+                        <li><a href="power-leveling.html">Power Leveling</a></li>
+                        <li><a href="proxy.html">Proxy</a></li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h3>Support</h3>
+                    <ul>
+                        <li><a href="a-propos.html">Contact</a></li>
+                        <li><a href="espace-client.html">Espace Client</a></li>
+                        <li><a href="#">FAQ</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2024 Gaming Community. Tous droits réservés.</p>
+            </div>
+        </div>
+    </footer>
+    <script src="script.js"></script>
+</body>
+</html>

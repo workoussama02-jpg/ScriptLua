@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html class="light" lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Espace Client - Script Lua</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,typography,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet"/>
+
+    <!-- Clerk Authentication -->
+    <script
+      async
+      crossorigin="anonymous"
+      data-clerk-publishable-key="pk_test_bWVhc3VyZWQtamFndWFyLTcuY2xlcmsuYWNjb3VudHMuZGV2JA"
+      src="https://cdn.jsdelivr.net/npm/@clerk/clerk-js@latest/dist/clerk.browser.js"
+      type="text/javascript"
+    ></script>
+
+    <!-- Supabase Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        primary: "#6366f1", // Indigo 500
+                        "background-light": "#f8fafc", // Slate 50
+                        "background-dark": "#0f172a", // Slate 900
+                    },
+                    fontFamily: {
+                        display: ["Inter", "sans-serif"],
+                        sans: ["Inter", "sans-serif"],
+                    },
+                    borderRadius: {
+                        DEFAULT: "0.75rem",
+                    },
+                    boxShadow: {
+                        'primary-xl': '0 10px 15px -3px rgba(99, 102, 241, 0.3), 0 4px 6px -4px rgba(99, 102, 241, 0.2)',
+                    }
+                },
+            },
+        };
+        function toggleDarkMode() {
+            document.documentElement.classList.toggle('dark');
+        }
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .sidebar-item-active {
+            background-color: rgba(99, 102, 241, 0.1);
+            color: #6366f1;
+            border-right: 3px solid #6366f1;
+        }
+        .segmented-control-item {
+            padding: 0.375rem 0.75rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        .segmented-control-item-active {
+            background-color: rgb(255 255 255);
+            color: #6366f1;
+            box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+            border-radius: 0.375rem;
+        }
+        .segmented-control-item-active.dark {
+            background-color: rgb(51 65 85);
+        }
+        .segmented-control-item-inactive {
+            color: rgb(100 116 139);
+        }
+        .segmented-control-item-inactive:hover {
+            color: rgb(51 65 85);
+        }
+        .dark .segmented-control-item-inactive {
+            color: rgb(148 163 184);
+        }
+        .dark .segmented-control-item-inactive:hover {
+            color: rgb(226 232 240);
+        }
+
+        /* Clerk Authentication Container */
+        .clerk-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: none; /* Hidden by default */
+            align-items: center;
+            justify-content: center;
+            z-index: 9999; /* Ensure it's on top */
+        }
+
+        .clerk-container.show {
+            display: flex;
+        }
+    </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 min-h-screen transition-colors duration-200">
+<div class="flex">
+<aside class="w-64 h-screen sticky top-0 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 hidden lg:flex flex-col">
+<div class="p-6 flex items-center space-x-3">
+<div class="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+<span class="material-icons-round text-white text-xl">support_agent</span>
+</div>
+<h1 class="font-bold text-xl tracking-tight text-slate-800 dark:text-white">ScriptLua</h1>
+</div>
+<nav class="flex-1 mt-4 px-4 space-y-2">
+<a class="flex items-center space-x-3 px-4 py-3 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all" href="index.html">
+<span class="material-icons-round">home</span>
+<span class="font-medium">Accueil</span>
+</a>
+<a class="flex items-center space-x-3 px-4 py-3 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all" href="nos-scripts.html">
+<span class="material-icons-round">code</span>
+<span class="font-medium">Scripts</span>
+</a>
+<a class="flex items-center space-x-3 px-4 py-3 rounded-lg sidebar-item-active" href="#">
+<span class="material-icons-round">confirmation_number</span>
+<span class="font-medium">Support</span>
+</a>
+<a class="flex items-center space-x-3 px-4 py-3 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all" href="power-leveling.html">
+<span class="material-icons-round">flash</span>
+<span class="font-medium">Power Leveling</span>
+</a>
+<a class="flex items-center space-x-3 px-4 py-3 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all" href="proxy.html">
+<span class="material-icons-round">vpn</span>
+<span class="font-medium">Proxy</span>
+</a>
+</nav>
+<div class="p-4 border-t border-slate-200 dark:border-slate-700">
+<button class="w-full flex items-center justify-center space-x-2 bg-slate-100 dark:bg-slate-700 py-2 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors" onclick="toggleDarkMode()">
+<span class="material-icons-round text-lg">dark_mode</span>
+<span class="text-sm font-medium">Toggle Theme</span>
+</button>
+</div>
+</aside>
+<main class="flex-1 p-8 overflow-y-auto">
+<!-- Client Dashboard -->
+<div id="client-dashboard" class="dashboard-content" style="display: none;">
+<header class="mb-8">
+<div class="flex items-center justify-between">
+<div class="flex items-center space-x-4">
+<div class="w-12 h-12 bg-primary rounded-full flex items-center justify-center">
+<span class="material-icons-round text-white text-xl">person</span>
+</div>
+<div>
+<h1 class="text-2xl font-bold text-slate-800 dark:text-white">Espace Client</h1>
+<p class="text-slate-600 dark:text-slate-400">Bienvenue dans votre tableau de bord</p>
+</div>
+</div>
+<div class="flex items-center space-x-4">
+<div class="relative">
+<input type="text" placeholder="Rechercher des tickets..." class="w-64 pl-10 pr-4 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent" id="clientSearchInput">
+<span class="material-icons-round absolute left-3 top-2.5 text-slate-400">search</span>
+</div>
+<div class="flex items-center space-x-2">
+<span class="text-sm text-slate-600 dark:text-slate-400">Connecté en tant que</span>
+<span class="font-medium text-slate-800 dark:text-white" id="userRole">Client</span>
+</div>
+<button class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg font-medium transition-colors" id="clientLogoutBtn">Déconnexion</button>
+</div>
+</div>
+</header>
+
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+<div class="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700">
+<div class="flex items-center justify-between">
+<div>
+<h3 class="text-sm font-medium text-slate-600 dark:text-slate-400">Total Tickets</h3>
+<p class="text-2xl font-bold text-slate-800 dark:text-white" id="totalTickets">0</p>
+</div>
+<div class="w-12 h-12 bg-blue-100 dark:bg-blue-900 rounded-lg flex items-center justify-center">
+<span class="material-icons-round text-blue-600 dark:text-blue-400">confirmation_number</span>
+</div>
+</div>
+</div>
+<div class="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700">
+<div class="flex items-center justify-between">
+<div>
+<h3 class="text-sm font-medium text-slate-600 dark:text-slate-400">Tickets Ouverts</h3>
+<p class="text-2xl font-bold text-slate-800 dark:text-white" id="openTickets">0</p>
+</div>
+<div class="w-12 h-12 bg-yellow-100 dark:bg-yellow-900 rounded-lg flex items-center justify-center">
+<span class="material-icons-round text-yellow-600 dark:text-yellow-400">schedule</span>
+</div>
+</div>
+</div>
+<div class="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700">
+<div class="flex items-center justify-between">
+<div>
+<h3 class="text-sm font-medium text-slate-600 dark:text-slate-400">En Cours</h3>
+<p class="text-2xl font-bold text-slate-800 dark:text-white" id="inProgressTickets">0</p>
+</div>
+<div class="w-12 h-12 bg-purple-100 dark:bg-purple-900 rounded-lg flex items-center justify-center">
+<span class="material-icons-round text-purple-600 dark:text-purple-400">engineering</span>
+</div>
+</div>
+</div>
+<div class="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700">
+<div class="flex items-center justify-between">
+<div>
+<h3 class="text-sm font-medium text-slate-600 dark:text-slate-400">Résolus</h3>
+<p class="text-2xl font-bold text-slate-800 dark:text-white" id="closedTickets">0</p>
+</div>
+<div class="w-12 h-12 bg-green-100 dark:bg-green-900 rounded-lg flex items-center justify-center">
+<span class="material-icons-round text-green-600 dark:text-green-400">check_circle</span>
+</div>
+</div>
+</div>
+</div>
+
+<div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+<div class="p-6 border-b border-slate-200 dark:border-slate-700">
+<div class="flex items-center justify-between">
+<h2 class="text-xl font-bold text-slate-800 dark:text-white">Tickets</h2>
+<div class="flex items-center space-x-4">
+<div class="flex bg-slate-100 dark:bg-slate-700 rounded-lg p-1">
+<button class="segmented-control-item segmented-control-item-active" data-filter="all">Tous</button>
+<button class="segmented-control-item segmented-control-item-inactive" data-filter="open">Ouverts</button>
+<button class="segmented-control-item segmented-control-item-inactive" data-filter="in-progress">En cours</button>
+<button class="segmented-control-item segmented-control-item-inactive" data-filter="closed">Fermés</button>
+</div>
+<button class="bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-lg font-medium transition-colors flex items-center space-x-2" id="newTicketBtn">
+<span class="material-icons-round text-sm">add</span>
+<span>Nouveau ticket</span>
+</button>
+</div>
+</div>
+</div>
+
+<div class="overflow-x-auto">
+<table class="w-full">
+<thead class="bg-slate-50 dark:bg-slate-700">
+<tr>
+<th class="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">ID</th>
+<th class="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Sujet</th>
+<th class="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Statut</th>
+<th class="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Priorité</th>
+<th class="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Modérateur</th>
+<th class="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Créé le</th>
+<th class="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Actions</th>
+</tr>
+</thead>
+<tbody class="bg-white dark:bg-slate-800 divide-y divide-slate-200 dark:divide-slate-700" id="ticketsTableBody">
+<!-- Tickets will be loaded here -->
+</tbody>
+</table>
+</div>
+</div>
+
+<!-- Moderator Dashboard -->
+<div id="moderator-dashboard" class="dashboard-content" style="display: none;">
+<header class="mb-8">
+<div class="flex items-center justify-between">
+<div class="flex items-center space-x-4">
+<div class="w-12 h-12 bg-primary rounded-full flex items-center justify-center">
+<span class="material-icons-round text-white text-xl">support_agent</span>
+</div>
+<div>
+<h1 class="text-2xl font-bold text-slate-800 dark:text-white">Panneau Modérateur</h1>
+<p class="text-slate-600 dark:text-slate-400">Gérez les tickets de support</p>
+</div>
+</div>
+<div class="flex items-center space-x-4">
+<div class="relative">
+<input type="text" placeholder="Rechercher des tickets..." class="w-64 pl-10 pr-4 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent" id="moderatorSearchInput">
+<span class="material-icons-round absolute left-3 top-2.5 text-slate-400">search</span>
+</div>
+<div class="flex items-center space-x-2">
+<span class="text-sm text-slate-600 dark:text-slate-400">Connecté en tant que</span>
+<span class="font-medium text-slate-800 dark:text-white" id="moderatorUserRole">Modérateur</span>
+</div>
+<div class="flex items-center space-x-3">
+<label class="flex items-center space-x-2 text-sm">
+<input type="checkbox" id="availability-toggle" class="rounded">
+<span>Disponible</span>
+</label>
+</div>
+<button class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg font-medium transition-colors" id="moderatorLogoutBtn">Déconnexion</button>
+</div>
+</div>
+</header>
+
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+<div class="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700">
+<div class="flex items-center justify-between">
+<div>
+<h3 class="text-sm font-medium text-slate-600 dark:text-slate-400">Mes Tickets</h3>
+<p class="text-2xl font-bold text-slate-800 dark:text-white" id="moderatorTotalTickets">0</p>
+</div>
+<div class="w-12 h-12 bg-blue-100 dark:bg-blue-900 rounded-lg flex items-center justify-center">
+<span class="material-icons-round text-blue-600 dark:text-blue-400">assignment</span>
+</div>
+</div>
+</div>
+<div class="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700">
+<div class="flex items-center justify-between">
+<div>
+<h3 class="text-sm font-medium text-slate-600 dark:text-slate-400">Tickets Disponibles</h3>
+<p class="text-2xl font-bold text-slate-800 dark:text-white" id="moderatorOpenTickets">0</p>
+</div>
+<div class="w-12 h-12 bg-yellow-100 dark:bg-yellow-900 rounded-lg flex items-center justify-center">
+<span class="material-icons-round text-yellow-600 dark:text-yellow-400">schedule</span>
+</div>
+</div>
+</div>
+<div class="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700">
+<div class="flex items-center justify-between">
+<div>
+<h3 class="text-sm font-medium text-slate-600 dark:text-slate-400">En Cours</h3>
+<p class="text-2xl font-bold text-slate-800 dark:text-white" id="moderatorInProgressTickets">0</p>
+</div>
+<div class="w-12 h-12 bg-purple-100 dark:bg-purple-900 rounded-lg flex items-center justify-center">
+<span class="material-icons-round text-purple-600 dark:text-purple-400">engineering</span>
+</div>
+</div>
+</div>
+<div class="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700">
+<div class="flex items-center justify-between">
+<div>
+<h3 class="text-sm font-medium text-slate-600 dark:text-slate-400">Fermés Aujourd'hui</h3>
+<p class="text-2xl font-bold text-slate-800 dark:text-white" id="moderatorClosedTickets">0</p>
+</div>
+<div class="w-12 h-12 bg-green-100 dark:bg-green-900 rounded-lg flex items-center justify-center">
+<span class="material-icons-round text-green-600 dark:text-green-400">check_circle</span>
+</div>
+</div>
+</div>
+</div>
+
+<div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+<div class="p-6 border-b border-slate-200 dark:border-slate-700">
+<div class="flex items-center justify-between">
+<h2 class="text-xl font-bold text-slate-800 dark:text-white">Tickets</h2>
+<div class="flex items-center space-x-4">
+<div class="flex bg-slate-100 dark:bg-slate-700 rounded-lg p-1">
+<button class="segmented-control-item segmented-control-item-active" data-filter="all">Tous</button>
+<button class="segmented-control-item segmented-control-item-inactive" data-filter="open">Ouverts</button>
+<button class="segmented-control-item segmented-control-item-inactive" data-filter="in-progress">En cours</button>
+<button class="segmented-control-item segmented-control-item-inactive" data-filter="closed">Fermés</button>
+</div>
+</div>
+</div>
+</div>
+
+<div class="overflow-x-auto">
+<table class="w-full">
+<thead class="bg-slate-50 dark:bg-slate-700">
+<tr>
+<th class="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">ID</th>
+<th class="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Sujet</th>
+<th class="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Statut</th>
+<th class="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Priorité</th>
+<th class="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Client</th>
+<th class="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Créé le</th>
+<th class="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Actions</th>
+</tr>
+</thead>
+<tbody class="bg-white dark:bg-slate-800 divide-y divide-slate-200 dark:divide-slate-700" id="moderatorTicketsTableBody">
+<!-- Tickets will be loaded here -->
+</tbody>
+</table>
+</div>
+</div>
+</div>
+
+<!-- Admin Dashboard -->
+<div id="admin-dashboard" class="dashboard-content" style="display: none;">
+<header class="mb-8">
+<div class="flex items-center justify-between">
+<div class="flex items-center space-x-4">
+<div class="w-12 h-12 bg-primary rounded-full flex items-center justify-center">
+<span class="material-icons-round text-white text-xl">admin_panel_settings</span>
+</div>
+<div>
+<h1 class="text-2xl font-bold text-slate-800 dark:text-white">Panneau Administrateur</h1>
+<p class="text-slate-600 dark:text-slate-400">Administration complète du système</p>
+</div>
+</div>
+<div class="flex items-center space-x-4">
+<div class="relative">
+<input type="text" placeholder="Rechercher des tickets..." class="w-64 pl-10 pr-4 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent" id="adminSearchInput">
+<span class="material-icons-round absolute left-3 top-2.5 text-slate-400">search</span>
+</div>
+<div class="flex items-center space-x-2">
+<span class="text-sm text-slate-600 dark:text-slate-400">Connecté en tant que</span>
+<span class="font-medium text-slate-800 dark:text-white" id="adminUserRole">Administrateur</span>
+</div>
+<div class="flex items-center space-x-3">
+<button class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-medium transition-colors" id="manageUsersBtn">Gérer Utilisateurs</button>
+<button class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg font-medium transition-colors" id="viewAnalyticsBtn">Analytics</button>
+</div>
+<button class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg font-medium transition-colors" id="adminLogoutBtn">Déconnexion</button>
+</div>
+</div>
+</header>
+
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+<div class="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700">
+<div class="flex items-center justify-between">
+<div>
+<h3 class="text-sm font-medium text-slate-600 dark:text-slate-400">Total Tickets</h3>
+<p class="text-2xl font-bold text-slate-800 dark:text-white" id="adminTotalTickets">0</p>
+</div>
+<div class="w-12 h-12 bg-blue-100 dark:bg-blue-900 rounded-lg flex items-center justify-center">
+<span class="material-icons-round text-blue-600 dark:text-blue-400">confirmation_number</span>
+</div>
+</div>
+</div>
+<div class="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700">
+<div class="flex items-center justify-between">
+<div>
+<h3 class="text-sm font-medium text-slate-600 dark:text-slate-400">Tickets Ouverts</h3>
+<p class="text-2xl font-bold text-slate-800 dark:text-white" id="adminOpenTickets">0</p>
+</div>
+<div class="w-12 h-12 bg-yellow-100 dark:bg-yellow-900 rounded-lg flex items-center justify-center">
+<span class="material-icons-round text-yellow-600 dark:text-yellow-400">schedule</span>
+</div>
+</div>
+</div>
+<div class="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700">
+<div class="flex items-center justify-between">
+<div>
+<h3 class="text-sm font-medium text-slate-600 dark:text-slate-400">Modérateurs Actifs</h3>
+<p class="text-2xl font-bold text-slate-800 dark:text-white" id="adminActiveModerators">0</p>
+</div>
+<div class="w-12 h-12 bg-purple-100 dark:bg-purple-900 rounded-lg flex items-center justify-center">
+<span class="material-icons-round text-purple-600 dark:text-purple-400">group</span>
+</div>
+</div>
+</div>
+<div class="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700">
+<div class="flex items-center justify-between">
+<div>
+<h3 class="text-sm font-medium text-slate-600 dark:text-slate-400">Temps Moyen Réponse</h3>
+<p class="text-2xl font-bold text-slate-800 dark:text-white" id="adminAvgResponseTime">0min</p>
+</div>
+<div class="w-12 h-12 bg-green-100 dark:bg-green-900 rounded-lg flex items-center justify-center">
+<span class="material-icons-round text-green-600 dark:text-green-400">timer</span>
+</div>
+</div>
+</div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+<div class="lg:col-span-2">
+<div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+<div class="p-6 border-b border-slate-200 dark:border-slate-700">
+<div class="flex items-center justify-between">
+<h2 class="text-xl font-bold text-slate-800 dark:text-white">Tous les Tickets</h2>
+<div class="flex items-center space-x-4">
+<select id="statusFilter" class="px-3 py-2 border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white">
+<option value="all">Tous les statuts</option>
+<option value="open">Ouverts</option>
+<option value="in-progress">En cours</option>
+<option value="closed">Fermés</option>
+</select>
+<select id="moderatorFilter" class="px-3 py-2 border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white">
+<option value="all">Tous les modérateurs</option>
+<!-- Moderators will be loaded here -->
+</select>
+</div>
+</div>
+</div>
+
+<div class="overflow-x-auto">
+<table class="w-full">
+<thead class="bg-slate-50 dark:bg-slate-700">
+<tr>
+<th class="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">ID</th>
+<th class="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Sujet</th>
+<th class="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Statut</th>
+<th class="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Priorité</th>
+<th class="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Assigné à</th>
+<th class="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Client</th>
+<th class="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Créé le</th>
+<th class="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Actions</th>
+</tr>
+</thead>
+<tbody class="bg-white dark:bg-slate-800 divide-y divide-slate-200 dark:divide-slate-700" id="adminTicketsTableBody">
+<!-- Tickets will be loaded here -->
+</tbody>
+</table>
+</div>
+</div>
+</div>
+
+<div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6">
+<h3 class="text-lg font-semibold text-slate-800 dark:text-white mb-4">Actions Rapides</h3>
+<div class="space-y-3">
+<button class="w-full bg-primary hover:bg-primary/90 text-white px-4 py-3 rounded-lg font-medium transition-colors flex items-center justify-start space-x-3">
+<span class="material-icons-round">analytics</span>
+<span>Voir les statistiques détaillées</span>
+</button>
+<button class="w-full bg-green-500 hover:bg-green-600 text-white px-4 py-3 rounded-lg font-medium transition-colors flex items-center justify-start space-x-3">
+<span class="material-icons-round">backup</span>
+<span>Sauvegarder les données</span>
+</button>
+<button class="w-full bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-3 rounded-lg font-medium transition-colors flex items-center justify-start space-x-3">
+<span class="material-icons-round">settings</span>
+<span>Paramètres système</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+
+<!-- Clerk Sign-In/Sign-Up Component -->
+<div id="clerk-auth-container" class="clerk-container">
+<div id="clerk-signin"></div>
+</div>
+
+<!-- Ticket Creation Modal -->
+<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden" id="ticketModal">
+<div class="bg-white dark:bg-slate-800 rounded-xl max-w-md w-full mx-4">
+<div class="p-6 border-b border-slate-200 dark:border-slate-700">
+<div class="flex items-center justify-between">
+<h3 class="text-lg font-semibold text-slate-800 dark:text-white">Créer un nouveau ticket</h3>
+<button class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" id="closeTicketModal">
+<span class="material-icons-round">close</span>
+</button>
+</div>
+</div>
+<div class="p-6">
+<form id="ticketForm">
+<div class="space-y-4">
+<div>
+<label for="problemType" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Type de problème</label>
+<select id="problemType" class="w-full px-3 py-2 border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent" required>
+<option value="">Sélectionnez un type</option>
+<option value="script-bug">Bug dans un script</option>
+<option value="script-not-working">Script ne fonctionne pas</option>
+<option value="account-issue">Problème de compte</option>
+<option value="payment-issue">Problème de paiement</option>
+<option value="technical-support">Support technique</option>
+<option value="feature-request">Demande de fonctionnalité</option>
+<option value="other">Autre</option>
+</select>
+</div>
+<div>
+<label for="ticketDescription" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Description (optionnel)</label>
+<textarea id="ticketDescription" rows="4" class="w-full px-3 py-2 border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent resize-none" placeholder="Décrivez votre problème en détail..."></textarea>
+</div>
+</div>
+<div class="flex justify-end space-x-3 mt-6">
+<button type="button" class="px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white font-medium" id="cancelTicketBtn">Annuler</button>
+<button type="submit" class="bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-lg font-medium transition-colors">Créer le ticket</button>
+</div>
+</form>
+</div>
+</div>
+</div>
+
+<!-- Chat Modal -->
+<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden" id="chat-modal">
+<div class="bg-white dark:bg-slate-800 rounded-xl max-w-2xl w-full mx-4 h-96 flex flex-col">
+<div class="p-6 border-b border-slate-200 dark:border-slate-700">
+<div class="flex items-center justify-between">
+<div>
+<h3 class="text-lg font-semibold text-slate-800 dark:text-white" id="chat-ticket-title">Ticket #123</h3>
+<span class="text-sm text-slate-600 dark:text-slate-400" id="chat-ticket-status">En attente...</span>
+</div>
+<button class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" id="closeChatModal">
+<span class="material-icons-round">close</span>
+</button>
+</div>
+</div>
+<div class="flex-1 p-6 overflow-y-auto" id="chat-messages">
+<!-- Messages will be loaded here -->
+</div>
+<div class="p-6 border-t border-slate-200 dark:border-slate-700">
+<div class="typing-indicator hidden" id="typingIndicator">
+<span class="text-sm text-slate-500 dark:text-slate-400">Quelqu'un est en train d'écrire...</span>
+</div>
+<form id="messageForm" class="flex space-x-3">
+<input type="text" id="messageInput" class="flex-1 px-3 py-2 border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="Tapez votre message..." required>
+<button type="submit" class="bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-lg font-medium transition-colors flex items-center">
+<span class="material-icons-round text-sm">send</span>
+</button>
+</form>
+</div>
+</div>
+</div>
+
+<!-- User Management Modal (Admin only) -->
+<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden" id="userManagementModal">
+<div class="bg-white dark:bg-slate-800 rounded-xl max-w-4xl w-full mx-4 max-h-96 overflow-hidden">
+<div class="p-6 border-b border-slate-200 dark:border-slate-700">
+<div class="flex items-center justify-between">
+<h3 class="text-lg font-semibold text-slate-800 dark:text-white">Gestion des utilisateurs</h3>
+<button class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" id="closeUserModal">
+<span class="material-icons-round">close</span>
+</button>
+</div>
+</div>
+<div class="p-6 overflow-y-auto max-h-80" id="users-list">
+<!-- Users will be loaded here -->
+</div>
+</div>
+</div>
+
+<!-- Ticket Details Modal -->
+<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden" id="ticketDetailsModal">
+<div class="bg-white dark:bg-slate-800 rounded-xl max-w-2xl w-full mx-4">
+<div class="p-6 border-b border-slate-200 dark:border-slate-700">
+<div class="flex items-center justify-between">
+<h3 class="text-lg font-semibold text-slate-800 dark:text-white" id="ticketDetailsTitle">Détails du ticket</h3>
+<button class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" id="closeTicketDetailsModal">
+<span class="material-icons-round">close</span>
+</button>
+</div>
+</div>
+<div class="p-6" id="ticketDetailsContent">
+<!-- Ticket details will be loaded here -->
+</div>
+</div>
+</div>
+
+<!-- Assignment Modal -->
+<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden" id="assignmentModal">
+<div class="bg-white dark:bg-slate-800 rounded-xl max-w-md w-full mx-4">
+<div class="p-6 border-b border-slate-200 dark:border-slate-700">
+<div class="flex items-center justify-between">
+<h3 class="text-lg font-semibold text-slate-800 dark:text-white">Assigner le ticket</h3>
+<button class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" id="closeAssignmentModal">
+<span class="material-icons-round">close</span>
+</button>
+</div>
+</div>
+<div class="p-6">
+<div class="space-y-4">
+<label for="moderatorSelect" class="block text-sm font-medium text-slate-700 dark:text-slate-300">Sélectionner un modérateur</label>
+<select id="moderatorSelect" class="w-full px-3 py-2 border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent">
+<!-- Moderators will be loaded here -->
+</select>
+</div>
+<div class="flex justify-end space-x-3 mt-6">
+<button type="button" class="px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white font-medium" id="cancelAssignmentBtn">Annuler</button>
+<button type="button" class="bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-lg font-medium transition-colors" id="confirmAssignmentBtn">Assigner</button>
+</div>
+</div>
+</div>
+</div>
+
+<!-- Rating Modal -->
+<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden" id="ratingModal">
+<div class="bg-white dark:bg-slate-800 rounded-xl max-w-md w-full mx-4">
+<div class="p-6 border-b border-slate-200 dark:border-slate-700">
+<div class="flex items-center justify-between">
+<h3 class="text-lg font-semibold text-slate-800 dark:text-white">Noter le service</h3>
+<button class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" id="closeRatingModal">
+<span class="material-icons-round">close</span>
+</button>
+</div>
+</div>
+<div class="p-6">
+<div class="text-center space-y-4">
+<p class="text-slate-600 dark:text-slate-400">Comment évaluez-vous la qualité du service ?</p>
+<div class="flex justify-center space-x-2" id="ratingStars">
+<!-- Stars will be generated here -->
+</div>
+<div class="flex justify-end space-x-3 mt-6">
+<button type="button" class="px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white font-medium" id="skipRatingBtn">Plus tard</button>
+<button type="button" class="bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-lg font-medium transition-colors" id="submitRatingBtn">Soumettre</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+    </div> <!-- End of flex container -->
+
+    <script>
+        function toggleDarkMode() {
+            const html = document.documentElement;
+            const isDark = html.classList.contains('dark');
+            if (isDark) {
+                html.classList.remove('dark');
+                localStorage.setItem('theme', 'light');
+            } else {
+                html.classList.add('dark');
+                localStorage.setItem('theme', 'dark');
+            }
+        }
+
+        // Load theme on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.classList.add('dark');
+            }
+        });
+    </script>
+
+    <script src="script.js"></script>
+</body>
+</html>
