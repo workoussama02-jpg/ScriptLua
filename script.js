@@ -2666,15 +2666,17 @@ function createMessageElement(message) {
     if (isRightAligned) {
         // Right-aligned bubble for admin messages and current user
         messageDiv.className = 'message-bubble user';
+        const avatarHtml = message.sender_avatar
+            ? `<img src="${message.sender_avatar}" alt="Avatar" class="w-6 h-6 rounded-full object-cover" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />`
+            : `<div class="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0"><span class="text-xs">${roleConfig.icon}</span></div>`;
+
         messageDiv.innerHTML = `
             <div class="flex items-end space-x-2">
                 <div class="flex-1"></div>
                 <div class="bg-blue-500 text-white px-4 py-2 rounded-2xl rounded-br-md max-w-xs shadow-lg">
                     <p class="text-sm">${message.content}</p>
                 </div>
-                <div class="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                    <span class="text-xs">${roleConfig.icon}</span>
-                </div>
+                ${avatarHtml}
             </div>
             <div class="text-right text-xs text-gray-500 mt-1">${timeString}</div>
         `;
@@ -2682,12 +2684,13 @@ function createMessageElement(message) {
         // Left-aligned bubble for others
         messageDiv.className = 'message-bubble other';
         const bubbleClass = 'bg-white border border-gray-200 text-gray-900';
+        const avatarHtml = message.sender_avatar
+            ? `<img src="${message.sender_avatar}" alt="Avatar" class="w-6 h-6 rounded-full object-cover" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />`
+            : `<div class="w-6 h-6 ${roleConfig.bgColor} rounded-full flex items-center justify-center flex-shrink-0"><span class="text-xs">${roleConfig.icon}</span></div>`;
 
         messageDiv.innerHTML = `
             <div class="flex items-end space-x-2">
-                <div class="w-6 h-6 ${roleConfig.bgColor} rounded-full flex items-center justify-center flex-shrink-0">
-                    <span class="text-xs">${roleConfig.icon}</span>
-                </div>
+                ${avatarHtml}
                 <div class="${bubbleClass} px-4 py-2 rounded-2xl rounded-bl-md max-w-xs shadow-sm">
                     <p class="text-sm">${message.content}</p>
                 </div>
@@ -2800,7 +2803,8 @@ async function sendMessage() {
                 content,
                 sender_type: currentUserRole,
                 sender_name: currentUser.firstName || currentUser.username || 'Utilisateur',
-                sender_id: currentUser.id
+                sender_id: currentUser.id,
+                sender_avatar: currentUser.imageUrl // Discord avatar URL
             }]);
 
         if (error) throw error;
