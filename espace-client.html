@@ -100,6 +100,25 @@
         .clerk-container.show {
             display: flex;
         }
+
+        /* Modal Styles */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+            padding: 1rem;
+        }
+
+        .modal.hidden {
+            display: none;
+        }
     </style>
 </head>
 <body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 min-h-screen transition-colors duration-200">
@@ -125,11 +144,11 @@
 <span class="font-medium">Support</span>
 </a>
 <a class="flex items-center space-x-3 px-4 py-3 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all" href="power-leveling.html">
-<span class="material-icons-round">flash</span>
+<span class="material-icons-round">bolt</span>
 <span class="font-medium">Power Leveling</span>
 </a>
 <a class="flex items-center space-x-3 px-4 py-3 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all" href="proxy.html">
-<span class="material-icons-round">vpn</span>
+<span class="material-icons-round">shield</span>
 <span class="font-medium">Proxy</span>
 </a>
 </nav>
@@ -448,8 +467,8 @@
 </div>
 </div>
 
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-<div class="lg:col-span-2">
+<div class="grid grid-cols-1 gap-6 mb-8">
+<div>
 <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
 <div class="p-6 border-b border-slate-200 dark:border-slate-700">
 <div class="flex items-center justify-between">
@@ -490,24 +509,6 @@
 </div>
 </div>
 </div>
-
-<div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6">
-<h3 class="text-lg font-semibold text-slate-800 dark:text-white mb-4">Actions Rapides</h3>
-<div class="space-y-3">
-<button class="w-full bg-primary hover:bg-primary/90 text-white px-4 py-3 rounded-lg font-medium transition-colors flex items-center justify-start space-x-3">
-<span class="material-icons-round">analytics</span>
-<span>Voir les statistiques détaillées</span>
-</button>
-<button class="w-full bg-green-500 hover:bg-green-600 text-white px-4 py-3 rounded-lg font-medium transition-colors flex items-center justify-start space-x-3">
-<span class="material-icons-round">backup</span>
-<span>Sauvegarder les données</span>
-</button>
-<button class="w-full bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-3 rounded-lg font-medium transition-colors flex items-center justify-start space-x-3">
-<span class="material-icons-round">settings</span>
-<span>Paramètres système</span>
-</button>
-</div>
-</div>
 </div>
 </div>
 
@@ -517,12 +518,12 @@
 </div>
 
 <!-- Ticket Creation Modal -->
-<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden" id="ticketModal">
+<div class="modal hidden" id="ticketModal">
 <div class="bg-white dark:bg-slate-800 rounded-xl max-w-md w-full mx-4">
 <div class="p-6 border-b border-slate-200 dark:border-slate-700">
 <div class="flex items-center justify-between">
 <h3 class="text-lg font-semibold text-slate-800 dark:text-white">Créer un nouveau ticket</h3>
-<button class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" id="closeTicketModal">
+<button class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 close-modal" id="closeTicketModal">
 <span class="material-icons-round">close</span>
 </button>
 </div>
@@ -558,7 +559,7 @@
 </div>
 
 <!-- Chat Modal -->
-<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden" id="chat-modal">
+<div class="modal hidden" id="chat-modal">
 <div class="bg-white dark:bg-slate-800 rounded-xl max-w-2xl w-full mx-4 h-96 flex flex-col">
 <div class="p-6 border-b border-slate-200 dark:border-slate-700">
 <div class="flex items-center justify-between">
@@ -566,7 +567,7 @@
 <h3 class="text-lg font-semibold text-slate-800 dark:text-white" id="chat-ticket-title">Ticket #123</h3>
 <span class="text-sm text-slate-600 dark:text-slate-400" id="chat-ticket-status">En attente...</span>
 </div>
-<button class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" id="closeChatModal">
+<button class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 close-modal" id="closeChatModal">
 <span class="material-icons-round">close</span>
 </button>
 </div>
@@ -589,12 +590,12 @@
 </div>
 
 <!-- User Management Modal (Admin only) -->
-<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden" id="userManagementModal">
+<div class="modal hidden" id="userManagementModal">
 <div class="bg-white dark:bg-slate-800 rounded-xl max-w-4xl w-full mx-4 max-h-96 overflow-hidden">
 <div class="p-6 border-b border-slate-200 dark:border-slate-700">
 <div class="flex items-center justify-between">
 <h3 class="text-lg font-semibold text-slate-800 dark:text-white">Gestion des utilisateurs</h3>
-<button class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" id="closeUserModal">
+<button class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 close-modal" id="closeUserModal">
 <span class="material-icons-round">close</span>
 </button>
 </div>
@@ -606,12 +607,12 @@
 </div>
 
 <!-- Ticket Details Modal -->
-<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden" id="ticketDetailsModal">
+<div class="modal hidden" id="ticketDetailsModal">
 <div class="bg-white dark:bg-slate-800 rounded-xl max-w-2xl w-full mx-4">
 <div class="p-6 border-b border-slate-200 dark:border-slate-700">
 <div class="flex items-center justify-between">
 <h3 class="text-lg font-semibold text-slate-800 dark:text-white" id="ticketDetailsTitle">Détails du ticket</h3>
-<button class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" id="closeTicketDetailsModal">
+<button class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 close-modal" id="closeTicketDetailsModal">
 <span class="material-icons-round">close</span>
 </button>
 </div>
@@ -623,12 +624,12 @@
 </div>
 
 <!-- Assignment Modal -->
-<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden" id="assignmentModal">
+<div class="modal hidden" id="assignmentModal">
 <div class="bg-white dark:bg-slate-800 rounded-xl max-w-md w-full mx-4">
 <div class="p-6 border-b border-slate-200 dark:border-slate-700">
 <div class="flex items-center justify-between">
 <h3 class="text-lg font-semibold text-slate-800 dark:text-white">Assigner le ticket</h3>
-<button class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" id="closeAssignmentModal">
+<button class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 close-modal" id="closeAssignmentModal">
 <span class="material-icons-round">close</span>
 </button>
 </div>
@@ -649,12 +650,12 @@
 </div>
 
 <!-- Rating Modal -->
-<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden" id="ratingModal">
+<div class="modal hidden" id="ratingModal">
 <div class="bg-white dark:bg-slate-800 rounded-xl max-w-md w-full mx-4">
 <div class="p-6 border-b border-slate-200 dark:border-slate-700">
 <div class="flex items-center justify-between">
 <h3 class="text-lg font-semibold text-slate-800 dark:text-white">Noter le service</h3>
-<button class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" id="closeRatingModal">
+<button class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 close-modal" id="closeRatingModal">
 <span class="material-icons-round">close</span>
 </button>
 </div>

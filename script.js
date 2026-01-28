@@ -1365,12 +1365,7 @@ window.addEventListener('load', async () => {
 
     console.log('✅ On espace-client page, initializing Clerk...');
 
-    // Show auth container initially while Clerk loads
-    const authContainer = document.getElementById('clerk-auth-container');
-    if (authContainer) {
-        authContainer.classList.add('show');
-        console.log('🔐 Auth container shown initially');
-    }
+    // Wait for Clerk to load before showing/hiding auth container
     const waitForClerk = () => {
         return new Promise((resolve) => {
             if (window.Clerk) {
@@ -1537,15 +1532,6 @@ window.addEventListener('load', async () => {
         const authContainer = document.getElementById('clerk-auth-container');
         if (authContainer) authContainer.classList.add('show');
     }
-
-    // Fallback: Show auth container after 5 seconds if Clerk hasn't loaded
-    setTimeout(() => {
-        const authContainer = document.getElementById('clerk-auth-container');
-        if (authContainer && !authContainer.classList.contains('show')) {
-            console.log('⏰ Fallback: Showing auth container after timeout');
-            authContainer.classList.add('show');
-        }
-    }, 5000);
 });
 
 // Show dashboard when user is authenticated
@@ -3338,9 +3324,22 @@ function initializeModalHandlers() {
 
     // Close modal with close button
     document.addEventListener('click', function(e) {
-        if (e.target.classList.contains('close-modal')) {
+        if (e.target.closest('.close-modal')) {
             const modal = e.target.closest('.modal');
             if (modal) closeModal(modal.id);
+        }
+    });
+
+    // Close modal with ESC key
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            // Find any currently open modal
+            const openModals = document.querySelectorAll('.modal[style*="display: block"], .modal:not([style*="display: none"])');
+            openModals.forEach(modal => {
+                if (modal.style.display !== 'none' && modal.style.display !== '') {
+                    closeModal(modal.id);
+                }
+            });
         }
     });
 
@@ -3406,7 +3405,8 @@ function initializeModalHandlers() {
 function openModal(modalId) {
     const modal = document.getElementById(modalId);
     if (modal) {
-        modal.style.display = 'block';
+        modal.classList.remove('hidden');
+        modal.style.display = 'flex';
         document.body.style.overflow = 'hidden';
     }
 }
@@ -3415,6 +3415,7 @@ function openModal(modalId) {
 function closeModal(modalId) {
     const modal = document.getElementById(modalId);
     if (modal) {
+        modal.classList.add('hidden');
         modal.style.display = 'none';
         document.body.style.overflow = 'auto';
 
