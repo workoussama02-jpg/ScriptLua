@@ -2585,6 +2585,7 @@ async function openTicketChat(ticketId) {
                     content,
                     sender_type,
                     sender_name,
+                    sender_avatar,
                     created_at
                 )
             `)
