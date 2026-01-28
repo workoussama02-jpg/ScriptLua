@@ -1983,15 +1983,90 @@ async function loadUserRole() {
         if (userData) {
             currentUserRole = userData.role;
             console.log('👤 User role loaded from DB:', currentUserRole);
+
+            const discordAccount = currentUser.externalAccounts?.find(account => account.provider === 'discord');
+            if (discordAccount) {
+                console.log('👤 Full Discord account object:', JSON.stringify(discordAccount, null, 2));
+                console.log('👤 Discord account properties:', Object.keys(discordAccount));
+                console.log('👤 Avatar URL from Clerk:', discordAccount.avatarUrl);
+                console.log('👤 Discord user ID:', discordAccount.providerUserId || discordAccount.id);
+                // Format Discord avatar URL if needed
+                let avatarUrl = discordAccount.avatarUrl;
+                if (avatarUrl && !avatarUrl.startsWith('http')) {
+                    // If it's just a hash, construct the full Discord CDN URL
+                    const discordUserId = discordAccount.providerUserId || discordAccount.id;
+                    if (discordUserId && avatarUrl) {
+                        avatarUrl = `https://cdn.discordapp.com/avatars/${discordUserId}/${avatarUrl}.png`;
+                        console.log('👤 Constructed full Discord avatar URL:', avatarUrl);
+                    }
+                }
+
+                console.log('👤 Discord account data:', {
+                    username: discordAccount.username,
+                    avatarUrl: avatarUrl
+                });
+                // Check if Discord info needs updating
+                const needsUpdate = !userData.discord_username ||
+                                   !userData.discord_avatar ||
+                                   userData.discord_username !== discordAccount.username ||
+                                   userData.discord_avatar !== avatarUrl;
+
+                if (needsUpdate) {
+                    console.log('👤 Updating Discord info for existing user - storing avatar:', avatarUrl);
+                    const { error: updateError } = await supabaseClient
+                        .from('users')
+                        .update({
+                            discord_username: discordAccount.username,
+                            discord_avatar: avatarUrl
+                        })
+                        .eq('clerk_id', currentUser.id);
+
+                    if (updateError) {
+                        console.error('👤 Error updating Discord info:', updateError);
+                    } else {
+                        console.log('👤 Discord info updated for existing user - avatar stored:', avatarUrl);
+                    }
+                }
+            }
         } else {
             console.log('👤 User not found in DB, creating new user record');
-            // Create new user record
+            // Create new user record with Discord information
+            const discordAccount = currentUser.externalAccounts?.find(account => account.provider === 'discord');
+            if (discordAccount) {
+                console.log('👤 Full Discord account object for new user:', JSON.stringify(discordAccount, null, 2));
+                console.log('👤 Discord account properties for new user:', Object.keys(discordAccount));
+                console.log('👤 Avatar URL from Clerk for new user:', discordAccount.avatarUrl);
+                console.log('👤 Discord user ID for new user:', discordAccount.providerUserId || discordAccount.id);
+            }
+
+            let avatarUrl = null;
+            if (discordAccount?.avatarUrl) {
+                avatarUrl = discordAccount.avatarUrl;
+                if (!avatarUrl.startsWith('http')) {
+                    console.log('👤 Avatar URL might need formatting for new user:', avatarUrl);
+                    // If it's just a hash, construct the full Discord CDN URL
+                    const discordUserId = discordAccount.providerUserId || discordAccount.id;
+                    if (discordUserId && avatarUrl) {
+                        avatarUrl = `https://cdn.discordapp.com/avatars/${discordUserId}/${avatarUrl}.png`;
+                        console.log('👤 Constructed full Discord avatar URL for new user:', avatarUrl);
+                    }
+                }
+            }
+
+            console.log('👤 Creating new user with Discord data:', {
+                username: discordAccount?.username,
+                avatarUrl: avatarUrl,
+                avatarUrlLength: avatarUrl?.length || 0
+            });
+
             const { data: newUser, error: insertError } = await supabaseClient
                 .from('users')
                 .insert([{
                     clerk_id: currentUser.id,
                     email: currentUser.emailAddresses[0]?.emailAddress,
                     name: currentUser.firstName || currentUser.username,
+                    discord_username: discordAccount?.username || null,
+                    discord_avatar: avatarUrl,
                     role: 'client' // Default role
                 }])
                 .select()
@@ -2118,6 +2193,9 @@ function initializeClientUI() {
 // Initialize admin-specific UI
 function initializeAdminUI() {
     console.log('👑 Initializing admin UI...');
+    console.log('👑 Current user:', currentUser);
+    console.log('👑 Current user role:', currentUserRole);
+
     // Load admin stats and user management
     loadAdminStats();
     loadUsersList();
@@ -2824,6 +2902,15 @@ async function sendMessage() {
     if (sendBtn) sendBtn.disabled = true;
 
     try {
+        // Get user's Discord avatar from database
+        const { data: userData, error: userError } = await supabaseClient
+            .from('users')
+            .select('discord_avatar')
+            .eq('clerk_id', currentUser.id)
+            .single();
+
+        const senderAvatar = userData?.discord_avatar || currentUser.imageUrl;
+
         const { error } = await supabaseClient
             .from('messages')
             .insert([{
@@ -2832,7 +2919,7 @@ async function sendMessage() {
                 sender_type: currentUserRole,
                 sender_name: currentUser.firstName || currentUser.username || 'Utilisateur',
                 sender_id: currentUser.id,
-                sender_avatar: currentUser.imageUrl // Discord avatar URL
+                sender_avatar: senderAvatar
             }]);
 
         if (error) throw error;
@@ -3398,32 +3485,108 @@ async function loadAdminStats() {
 async function loadUsersList() {
     try {
         console.log('👥 Loading users list for admin...');
-        const { data: users, error } = await supabaseClient
+
+        // Check if supabaseClient is available
+        if (!supabaseClient) {
+            console.error('👥 Supabase client not available');
+            showNotification('Erreur de connexion à la base de données', 'error');
+            return;
+        }
+
+        // Check if current user is admin
+        if (currentUserRole !== 'admin') {
+            console.error('👥 User is not admin, cannot load users list');
+            showNotification('Accès non autorisé', 'error');
+            return;
+        }
+
+        let { data: users, error } = await supabaseClient
             .from('users')
             .select('*')
             .order('created_at', { ascending: false });
 
-        if (error) throw error;
+        if (error) {
+            console.error('👥 Database error:', error);
+            throw error;
+        }
 
-        console.log('👥 Found', users?.length || 0, 'users:', users?.map(u => ({ id: u.id, name: u.name, email: u.email, role: u.role })));
+        console.log('👥 Found', users?.length || 0, 'users:', users?.map(u => ({
+            id: u.id,
+            name: u.name,
+            email: u.email,
+            role: u.role,
+            discord_username: u.discord_username,
+            discord_avatar: u.discord_avatar,
+            hasAvatar: !!u.discord_avatar
+        })));
 
-        const usersList = document.getElementById('users-list');
-        if (!usersList) {
-            console.error('👥 Users list element not found');
+        // Refresh Discord information for all users (not just current user)
+        // This ensures avatars are up-to-date when viewing the user management table
+        await refreshAllUsersDiscordInfo(users);
+
+        // Reload users data after potential updates
+        console.log('👥 Reloading users data after Discord info refresh...');
+        const { data: updatedUsers, error: reloadError } = await supabaseClient
+            .from('users')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+        if (reloadError) {
+            console.error('Error reloading users:', reloadError);
+        } else {
+            users = updatedUsers; // Use the updated data
+            console.log('👥 Users data reloaded, found avatars:', users?.filter(u => u.discord_avatar).length);
+        }
+
+        const usersTableBody = document.getElementById('usersTableBody');
+        if (!usersTableBody) {
+            console.error('👥 Users table body not found');
+            showNotification('Erreur d\'interface utilisateur', 'error');
             return;
         }
 
-        usersList.innerHTML = '';
+        usersTableBody.innerHTML = '';
 
+        if (!users || users.length === 0) {
+            console.log('👥 No users found, showing empty state');
+            usersTableBody.innerHTML = `
+                <tr>
+                    <td colspan="7" class="px-6 py-12 text-center text-slate-500">
+                        <div class="text-4xl mb-4">👥</div>
+                        <p>Aucun utilisateur trouvé</p>
+                        <p class="text-sm">La base de données ne contient aucun utilisateur.</p>
+                    </td>
+                </tr>
+            `;
+            updateUserTableInfo(0, 0);
+            return;
+        }
+
+        console.log('👥 Creating user rows for', users.length, 'users');
         users.forEach(user => {
-            const userCard = createUserCard(user);
-            usersList.appendChild(userCard);
+            const userRow = createUserTableRow(user);
+            usersTableBody.appendChild(userRow);
         });
 
-        console.log('👥 Users list loaded successfully');
+        updateUserTableInfo(users.length, users.length);
+        console.log('👥 Users table loaded successfully');
     } catch (error) {
-        console.error('Error loading users:', error);
-        showNotification('Erreur lors du chargement des utilisateurs', 'error');
+        console.error('❌ Error loading users:', error);
+        showNotification('Erreur lors du chargement des utilisateurs: ' + error.message, 'error');
+
+        // Show error state in table
+        const usersTableBody = document.getElementById('usersTableBody');
+        if (usersTableBody) {
+            usersTableBody.innerHTML = `
+                <tr>
+                    <td colspan="7" class="px-6 py-12 text-center text-red-500">
+                        <div class="text-4xl mb-4">❌</div>
+                        <p>Erreur de chargement</p>
+                        <p class="text-sm">${error.message}</p>
+                    </td>
+                </tr>
+            `;
+        }
     }
 }
 
@@ -3450,27 +3613,96 @@ async function loadAvailableModerators() {
     }
 }
 
-// Create user card for admin management
-function createUserCard(user) {
-    const card = document.createElement('div');
-    card.className = 'user-card';
+// Create user table row for admin management
+function createUserTableRow(user) {
+    const row = document.createElement('tr');
+    row.className = 'table-row';
 
-    card.innerHTML = `
-        <div class="user-info">
-            <h4>${user.name || 'Utilisateur'}</h4>
-            <p>${user.email}</p>
-        </div>
-        <div class="user-role ${user.role}">${user.role}</div>
-        <div class="user-actions">
-            <select onchange="updateUserRole('${user.id}', this.value)">
+    // Get Discord information from database (now properly stored)
+    const discordUsername = user.discord_username;
+    const discordAvatar = user.discord_avatar || null;
+
+    // Debug: Log avatar URL to see what we're getting
+    if (discordAvatar) {
+        console.log('🎨 Discord avatar URL for user', user.name, '(role:', user.role, '):', discordAvatar, 'Length:', discordAvatar.length);
+    } else {
+        console.log('🎨 No Discord avatar for user', user.name, '(role:', user.role, ') - using fallback');
+    }
+
+    // Also log the full user object for debugging
+    console.log('👤 Full user object for', user.name, ':', {
+        id: user.id,
+        clerk_id: user.clerk_id,
+        discord_username: user.discord_username,
+        discord_avatar: user.discord_avatar,
+        hasAvatar: !!user.discord_avatar,
+        role: user.role
+    });
+
+    // Generate avatar HTML - use Discord avatar if available, otherwise fallback
+    const avatarHtml = discordAvatar
+        ? `<img src="${discordAvatar}" alt="Avatar Discord" class="w-10 h-10 rounded-lg object-cover" onerror="console.log('❌ Avatar failed to load for user:', '${user.name}', 'URL:', '${discordAvatar}'); this.style.display='none'; this.nextElementSibling.style.display='flex';" onload="console.log('✅ Avatar loaded for user:', '${user.name}')"; />
+           <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center text-white font-bold" style="display: none;">
+            ${(user.name || user.email || 'U').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+           </div>`
+        : `<div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center text-white font-bold">
+            ${(user.name || user.email || 'U').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+           </div>`;
+
+    // Mock status and activity data (you can replace with real data)
+    const isOnline = Math.random() > 0.5;
+    const lastActivity = isOnline ? 'Il y a 5 min' : `Il y a ${Math.floor(Math.random() * 24) + 1}h`;
+
+    row.innerHTML = `
+        <td class="px-6 py-4 whitespace-nowrap">
+            <input type="checkbox" class="user-checkbox rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap">
+            <div class="flex items-center">
+                <div class="flex-shrink-0 w-10 h-10">
+                    ${avatarHtml}
+                </div>
+                <div class="ml-4">
+                    <div class="text-sm font-medium text-slate-900">${user.name || 'Utilisateur'}</div>
+                    <div class="text-sm text-slate-600 font-medium">${discordUsername ? '@' + discordUsername : '<span class="text-slate-400 italic">Aucun Discord</span>'}</div>
+                </div>
+            </div>
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap">
+            <div class="text-sm text-slate-900">${user.email}</div>
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap">
+            <select onchange="updateUserRole('${user.id}', this.value)" class="px-3 py-1 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                 <option value="client" ${user.role === 'client' ? 'selected' : ''}>Client</option>
                 <option value="moderator" ${user.role === 'moderator' ? 'selected' : ''}>Modérateur</option>
                 <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Admin</option>
             </select>
-        </div>
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap">
+            <div class="flex items-center">
+                <div class="status-indicator ${isOnline ? 'status-online' : 'status-offline'} mr-2"></div>
+                <span class="text-sm text-slate-900">${isOnline ? 'En ligne' : 'Hors ligne'}</span>
+            </div>
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+            ${lastActivity}
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+            <div class="flex items-center space-x-2">
+                <button class="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors" onclick="editUser('${user.id}')" title="Modifier">
+                    <span class="material-icons-round text-sm">edit</span>
+                </button>
+                <button class="p-1 text-slate-400 hover:text-orange-600 hover:bg-orange-50 rounded transition-colors" onclick="manageUserPermissions('${user.id}')" title="Permissions">
+                    <span class="material-icons-round text-sm">shield</span>
+                </button>
+                <button class="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors" onclick="deleteUser('${user.id}')" title="Supprimer">
+                    <span class="material-icons-round text-sm">delete</span>
+                </button>
+            </div>
+        </td>
     `;
 
-    return card;
+    return row;
 }
 
 // Update user role
@@ -3489,6 +3721,141 @@ async function updateUserRole(userId, newRole) {
         console.error('Error updating user role:', error);
         showNotification('Erreur lors de la mise à jour du rôle', 'error');
     }
+}
+
+// Update user table info display
+function updateUserTableInfo(displayed, total) {
+    const infoElement = document.getElementById('userTableInfo');
+    if (infoElement) {
+        infoElement.textContent = `Affichage de ${displayed} utilisateurs sur ${total}`;
+    }
+}
+
+// User management action functions
+function editUser(userId) {
+    showNotification('Fonctionnalité de modification en cours de développement', 'info');
+}
+
+function manageUserPermissions(userId) {
+    showNotification('Fonctionnalité de gestion des permissions en cours de développement', 'info');
+}
+
+async function deleteUser(userId) {
+    if (!confirm('Êtes-vous sûr de vouloir supprimer cet utilisateur ? Cette action est irréversible.')) {
+        return;
+    }
+
+    try {
+        const { error } = await supabaseClient
+            .from('users')
+            .delete()
+            .eq('id', userId);
+
+        if (error) throw error;
+
+        showNotification('Utilisateur supprimé avec succès', 'success');
+        await loadUsersList();
+    } catch (error) {
+        console.error('Error deleting user:', error);
+        showNotification('Erreur lors de la suppression de l\'utilisateur', 'error');
+    }
+}
+
+// Initialize user management modal functionality
+function initializeUserManagement() {
+    // Search functionality
+    const searchInput = document.getElementById('userSearchInput');
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
+            filterUsers(this.value.toLowerCase().trim());
+        });
+    }
+
+    // Refresh Discord avatars button
+    const refreshDiscordAvatarsBtn = document.getElementById('refreshDiscordAvatarsBtn');
+    if (refreshDiscordAvatarsBtn) {
+        refreshDiscordAvatarsBtn.addEventListener('click', async function() {
+            console.log('🔄 Manual refresh of Discord avatars requested');
+            showNotification('Actualisation des avatars Discord en cours...', 'info');
+            
+            try {
+                // Get current users list
+                const { data: users, error } = await supabaseClient
+                    .from('users')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+
+                if (error) throw error;
+
+                // Refresh Discord info for all users
+                await refreshAllUsersDiscordInfo(users);
+
+                // Reload the users table
+                await loadUsersList();
+                
+                showNotification('Avatars Discord actualisés avec succès', 'success');
+            } catch (error) {
+                console.error('Error refreshing Discord avatars:', error);
+                showNotification('Erreur lors de l\'actualisation des avatars', 'error');
+            }
+        });
+    }
+
+    // Select all checkbox
+    const selectAllCheckbox = document.getElementById('selectAllUsers');
+    if (selectAllCheckbox) {
+        selectAllCheckbox.addEventListener('change', function() {
+            const checkboxes = document.querySelectorAll('.user-checkbox');
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = this.checked;
+            });
+        });
+    }
+
+    // Download button
+    const downloadBtn = document.getElementById('userDownloadBtn');
+    if (downloadBtn) {
+        downloadBtn.addEventListener('click', function() {
+            showNotification('Fonctionnalité d\'export en cours de développement', 'info');
+        });
+    }
+
+    // Filter button
+    const filterBtn = document.getElementById('userFilterBtn');
+    if (filterBtn) {
+        filterBtn.addEventListener('click', function() {
+            showNotification('Filtres avancés en cours de développement', 'info');
+        });
+    }
+}
+
+// Filter users based on search term
+function filterUsers(searchTerm) {
+    const tableBody = document.getElementById('usersTableBody');
+    if (!tableBody) return;
+
+    const rows = tableBody.querySelectorAll('tr');
+    let visibleCount = 0;
+
+    rows.forEach(row => {
+        if (row.querySelector('td[colspan]')) return; // Skip empty state row
+
+        const userName = row.querySelector('td:nth-child(2) .font-medium')?.textContent.toLowerCase() || '';
+        const userEmail = row.querySelector('td:nth-child(3) .text-slate-900')?.textContent.toLowerCase() || '';
+        const discordUsernameElement = row.querySelector('td:nth-child(2) .text-slate-600');
+        const discordUsername = discordUsernameElement ? discordUsernameElement.textContent.toLowerCase().replace('@', '') : '';
+
+        const matches = userName.includes(searchTerm) ||
+                       userEmail.includes(searchTerm) ||
+                       discordUsername.includes(searchTerm);
+
+        row.style.display = matches || searchTerm === '' ? '' : 'none';
+        if (matches || searchTerm === '') visibleCount++;
+    });
+
+    // Update info display
+    const totalRows = rows.length - (tableBody.querySelector('td[colspan]') ? 1 : 0);
+    updateUserTableInfo(visibleCount, totalRows);
 }
 
 // Initialize availability toggle for moderators
@@ -3621,13 +3988,35 @@ function initializeModalHandlers() {
     // Handle admin buttons
     document.getElementById('manageUsersBtn')?.addEventListener('click', function() {
         console.log('👥 Opening user management modal');
+        console.log('👥 Current user role:', currentUserRole);
+        console.log('👥 Current user:', currentUser);
+
+        if (currentUserRole !== 'admin') {
+            console.error('👥 Access denied: user is not admin');
+            showNotification('Accès non autorisé - rôle administrateur requis', 'error');
+            return;
+        }
+
         openModal('userManagementModal');
-        // Load users when modal opens
-        setTimeout(() => loadUsersList(), 100);
+        // Load users and initialize functionality when modal opens
+        setTimeout(() => {
+            console.log('👥 Initializing user management...');
+            loadUsersList();
+            initializeUserManagement();
+        }, 100);
     });
 
     document.getElementById('viewAnalyticsBtn')?.addEventListener('click', function() {
         showNotification('Fonctionnalité d\'analytics en cours de développement', 'info');
+    });
+
+    // Test button for debugging
+    document.getElementById('testModalBtn')?.addEventListener('click', function() {
+        console.log('🧪 Test button clicked');
+        console.log('🧪 Current user:', currentUser);
+        console.log('🧪 Current user role:', currentUserRole);
+        console.log('🧪 Supabase client:', !!supabaseClient);
+        openModal('userManagementModal');
     });
 
     // Handle message form - only add listeners once
@@ -3697,11 +4086,29 @@ function initializeModalHandlers() {
 
 // Open modal
 function openModal(modalId) {
+    console.log('🔧 Opening modal:', modalId);
+    console.log('🔧 Current user:', currentUser);
+    console.log('🔧 Current user role:', currentUserRole);
+    console.log('🔧 Supabase client available:', !!supabaseClient);
+
     const modal = document.getElementById(modalId);
     if (modal) {
+        console.log('🔧 Modal element found, setting display to flex');
         modal.classList.remove('hidden');
         modal.style.display = 'flex';
         document.body.style.overflow = 'hidden';
+        console.log('🔧 Modal opened successfully');
+
+        // If this is the user management modal, load users
+        if (modalId === 'userManagementModal') {
+            console.log('🔧 User management modal opened, loading users...');
+            setTimeout(() => {
+                loadUsersList();
+                initializeUserManagement();
+            }, 100);
+        }
+    } else {
+        console.error('🔧 Modal element not found:', modalId);
     }
 }
 
@@ -3820,37 +4227,138 @@ function filterTickets(searchTerm, role) {
     });
 }
 
-// Update user role display in the UI
-function updateUserRoleDisplay() {
-    if (!currentUser || !currentUserRole) {
-        console.log('❌ Cannot update role display - missing user or role');
-        return;
+// Refresh Discord information for all users (not just current user)
+// This ensures avatars are up-to-date when viewing the user management table
+async function refreshAllUsersDiscordInfo(users) {
+    console.log('🔄 Refreshing Discord info for all users...');
+
+    // We can only update the current user's Discord info since we only have access to their Clerk data
+    const currentUserRecord = users.find(u => u.clerk_id === currentUser.id);
+    if (currentUserRecord && (!currentUserRecord.discord_username || !currentUserRecord.discord_avatar)) {
+        console.log('🔄 Updating current user Discord info...');
+        await updateUserDiscordInfo(currentUserRecord.id);
     }
 
-    console.log('👤 Updating role display for role:', currentUserRole);
+    // For other users, we can't access their Discord data through Clerk
+    // But we can try to get their avatar from recent messages if they have any
+    for (const user of users) {
+        if (!user.discord_avatar && user.clerk_id !== currentUser.id) {
+            console.log('🔄 Trying to get avatar from messages for user:', user.name, '(ID:', user.clerk_id + ')');
+            try {
+                const { data: recentMessage, error } = await supabaseClient
+                    .from('messages')
+                    .select('sender_avatar')
+                    .eq('sender_id', user.clerk_id)
+                    .not('sender_avatar', 'is', null)
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .single();
 
-    const roleDisplays = [
-        'clientUserRole',
-        'moderatorUserRole',
-        'adminUserRole',
-        'userRole' // Generic fallback
-    ];
+                if (!error && recentMessage?.sender_avatar) {
+                    console.log('✅ Found avatar in messages for user:', user.name, recentMessage.sender_avatar);
+                    const { error: updateError } = await supabaseClient
+                        .from('users')
+                        .update({ discord_avatar: recentMessage.sender_avatar })
+                        .eq('id', user.id);
 
-    const roleLabels = {
-        'client': 'Client',
-        'moderator': 'Modérateur',
-        'admin': 'Administrateur'
-    };
-
-    const displayText = roleLabels[currentUserRole] || currentUserRole;
-
-    roleDisplays.forEach(elementId => {
-        const element = document.getElementById(elementId);
-        if (element) {
-            element.textContent = displayText;
-            console.log('✅ Updated role display in element:', elementId, 'to:', displayText);
+                    if (updateError) {
+                        console.error('Error updating user avatar from messages:', updateError);
+                    } else {
+                        console.log('✅ Updated user avatar from messages for:', user.name);
+                    }
+                } else {
+                    console.log('❌ No avatar found in messages for user:', user.name);
+                }
+            } catch (error) {
+                console.log('⚠️ Error checking messages for user:', user.name, error.message);
+            }
         }
-    });
+    }
+
+    console.log('✅ Discord info refresh completed');
+}
+
+// Update Discord information for a specific user
+async function updateUserDiscordInfo(userId) {
+    try {
+        console.log('🔄 Updating Discord info for user ID:', userId);
+
+        // Get the user record
+        const { data: userRecord, error: userError } = await supabaseClient
+            .from('users')
+            .select('clerk_id, discord_username, discord_avatar')
+            .eq('id', userId)
+            .single();
+
+        if (userError) {
+            console.error('Error fetching user record:', userError);
+            return;
+        }
+
+        // Get Discord account from Clerk (only works for current user)
+        if (userRecord.clerk_id === currentUser.id) {
+            const discordAccount = currentUser.externalAccounts?.find(account => account.provider === 'discord');
+
+            console.log('🔄 Full Discord account object for current user:', JSON.stringify(discordAccount, null, 2));
+            console.log('🔄 Discord account properties:', discordAccount ? Object.keys(discordAccount) : 'No Discord account found');
+
+            if (discordAccount) {
+                console.log('🔄 Found Discord account for current user:', discordAccount.username);
+                console.log('🔄 Discord avatarUrl from Clerk:', discordAccount.avatarUrl);
+                console.log('🔄 Discord providerUserId:', discordAccount.providerUserId);
+                console.log('🔄 Discord id:', discordAccount.id);
+
+                let avatarUrl = null;
+                if (discordAccount.avatarUrl) {
+                    avatarUrl = discordAccount.avatarUrl;
+                    console.log('🔄 Using Clerk avatar URL directly:', avatarUrl);
+                    if (!avatarUrl.startsWith('http')) {
+                        // If it's just a hash, construct the full Discord CDN URL
+                        const discordUserId = discordAccount.providerUserId || discordAccount.id;
+                        if (discordUserId && avatarUrl) {
+                            avatarUrl = `https://cdn.discordapp.com/avatars/${discordUserId}/${avatarUrl}.png`;
+                            console.log('🔄 Constructed full Discord avatar URL:', avatarUrl);
+                        }
+                    }
+                } else {
+                    console.log('🔄 No avatarUrl found in Discord account');
+                }
+
+                console.log('🔄 Final avatarUrl to save:', avatarUrl);
+
+                // Check if Discord info needs updating
+                const needsUpdate = !userRecord.discord_username ||
+                                   !userRecord.discord_avatar ||
+                                   userRecord.discord_username !== discordAccount.username ||
+                                   userRecord.discord_avatar !== avatarUrl;
+
+                if (needsUpdate) {
+                    console.log('🔄 Updating Discord info for user:', userRecord.clerk_id);
+                    const { error: updateError } = await supabaseClient
+                        .from('users')
+                        .update({
+                            discord_username: discordAccount.username,
+                            discord_avatar: avatarUrl
+                        })
+                        .eq('id', userId);
+
+                    if (updateError) {
+                        console.error('Error updating Discord info:', updateError);
+                    } else {
+                        console.log('✅ Discord info updated for user:', userRecord.clerk_id);
+                    }
+                } else {
+                    console.log('🔄 Discord info already up-to-date for user:', userRecord.clerk_id);
+                }
+            } else {
+                console.log('🔄 No Discord account found for current user');
+            }
+        } else {
+            console.log('🔄 Cannot update Discord info for other users (only current user data available)');
+        }
+    } catch (error) {
+        console.error('Error in updateUserDiscordInfo:', error);
+    }
 }
 
 // Export functions for global access
@@ -3860,5 +4368,8 @@ window.assignTicket = assignTicket;
 window.openTicketChat = openTicketChat;
 window.sendMessage = sendMessage;
 window.updateUserRole = updateUserRole;
+window.editUser = editUser;
+window.manageUserPermissions = manageUserPermissions;
+window.deleteUser = deleteUser;
 window.openModal = openModal;
 window.closeModal = closeModal;

@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Management Mockup 2 - Professional Table</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+
+        .table-row {
+            transition: all 0.2s ease;
+        }
+
+        .table-row:hover {
+            background-color: #f8fafc;
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .status-online {
+            background-color: #10b981;
+            box-shadow: 0 0 6px rgba(16, 185, 129, 0.4);
+        }
+
+        .status-offline {
+            background-color: #6b7280;
+        }
+
+        .status-away {
+            background-color: #f59e0b;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-7xl h-[700px] flex flex-col overflow-hidden">
+
+        <!-- Header -->
+        <div class="bg-gradient-to-r from-slate-800 to-slate-700 text-white p-6 flex items-center justify-between">
+            <div class="flex items-center space-x-4">
+                <div class="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center">
+                    <span class="material-icons-round text-2xl">table_chart</span>
+                </div>
+                <div>
+                    <h3 class="text-xl font-bold">Gestion des utilisateurs</h3>
+                    <p class="text-sm opacity-90">Tableau de bord professionnel des comptes utilisateur</p>
+                </div>
+            </div>
+            <div class="flex items-center space-x-3">
+                <div class="relative">
+                    <input type="text" placeholder="Rechercher..." class="pl-10 pr-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/70 focus:ring-2 focus:ring-white/30 focus:border-white/50">
+                    <span class="material-icons-round absolute left-3 top-2.5 text-white/70">search</span>
+                </div>
+                <button class="p-3 hover:bg-white/10 rounded-lg transition-colors">
+                    <span class="material-icons-round">filter_list</span>
+                </button>
+                <button class="p-3 hover:bg-white/10 rounded-lg transition-colors">
+                    <span class="material-icons-round">download</span>
+                </button>
+                <button class="p-3 hover:bg-white/10 rounded-lg transition-colors">
+                    <span class="material-icons-round">close</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Toolbar -->
+        <div class="bg-slate-50 px-6 py-4 border-b border-slate-200">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <div class="flex items-center space-x-2">
+                        <span class="text-sm text-slate-600">Afficher:</span>
+                        <select class="px-3 py-1 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                            <option>10</option>
+                            <option>25</option>
+                            <option>50</option>
+                            <option>100</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <span class="text-sm text-slate-600">Trier par:</span>
+                        <select class="px-3 py-1 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                            <option>Nom</option>
+                            <option>Email</option>
+                            <option>Rôle</option>
+                            <option>Dernière activité</option>
+                            <option>Date d'inscription</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <button class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center space-x-2">
+                        <span class="material-icons-round text-sm">add</span>
+                        <span>Nouvel utilisateur</span>
+                    </button>
+                    <button class="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center space-x-2">
+                        <span class="material-icons-round text-sm">settings</span>
+                        <span>Paramètres</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Table -->
+        <div class="flex-1 overflow-y-auto">
+            <table class="w-full">
+                <thead class="bg-slate-50 sticky top-0">
+                    <tr class="border-b border-slate-200">
+                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                            <input type="checkbox" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                        </th>
+                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                            Utilisateur
+                        </th>
+                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                            Contact
+                        </th>
+                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                            Rôle
+                        </th>
+                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                            Statut
+                        </th>
+                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                            Dernière activité
+                        </th>
+                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                            Actions
+                        </th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-200">
+
+                    <!-- User Row 1 -->
+                    <tr class="table-row">
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <input type="checkbox" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0 w-10 h-10">
+                                    <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center text-white font-bold">
+                                        JD
+                                    </div>
+                                </div>
+                                <div class="ml-4">
+                                    <div class="text-sm font-medium text-slate-900">Jean Dupont</div>
+                                    <div class="text-sm text-slate-500">ID: #12345</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm text-slate-900">jean.dupont@email.com</div>
+                            <div class="text-sm text-slate-500">+33 6 12 34 56 78</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                <span class="material-icons-round text-xs mr-1">person</span>
+                                Client
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="flex items-center">
+                                <div class="status-indicator status-online mr-2"></div>
+                                <span class="text-sm text-slate-900">En ligne</span>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                            Il y a 5 min
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <div class="flex items-center space-x-2">
+                                <button class="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors">
+                                    <span class="material-icons-round text-sm">edit</span>
+                                </button>
+                                <button class="p-1 text-slate-400 hover:text-orange-600 hover:bg-orange-50 rounded transition-colors">
+                                    <span class="material-icons-round text-sm">shield</span>
+                                </button>
+                                <button class="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors">
+                                    <span class="material-icons-round text-sm">delete</span>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+
+                    <!-- User Row 2 -->
+                    <tr class="table-row">
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <input type="checkbox" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0 w-10 h-10">
+                                    <div class="w-10 h-10 bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg flex items-center justify-center text-white font-bold">
+                                        ML
+                                    </div>
+                                </div>
+                                <div class="ml-4">
+                                    <div class="text-sm font-medium text-slate-900">Marie Leroy</div>
+                                    <div class="text-sm text-slate-500">ID: #12346</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm text-slate-900">marie.leroy@email.com</div>
+                            <div class="text-sm text-slate-500">+33 6 98 76 54 32</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                                <span class="material-icons-round text-xs mr-1">shield</span>
+                                Modérateur
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="flex items-center">
+                                <div class="status-indicator status-away mr-2"></div>
+                                <span class="text-sm text-slate-900">Occupé</span>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                            Il y a 2h
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <div class="flex items-center space-x-2">
+                                <button class="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors">
+                                    <span class="material-icons-round text-sm">edit</span>
+                                </button>
+                                <button class="p-1 text-slate-400 hover:text-orange-600 hover:bg-orange-50 rounded transition-colors">
+                                    <span class="material-icons-round text-sm">shield</span>
+                                </button>
+                                <button class="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors">
+                                    <span class="material-icons-round text-sm">delete</span>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+
+                    <!-- User Row 3 -->
+                    <tr class="table-row">
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <input type="checkbox" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0 w-10 h-10">
+                                    <div class="w-10 h-10 bg-gradient-to-br from-red-500 to-red-600 rounded-lg flex items-center justify-center text-white font-bold">
+                                        AM
+                                    </div>
+                                </div>
+                                <div class="ml-4">
+                                    <div class="text-sm font-medium text-slate-900">Admin Martin</div>
+                                    <div class="text-sm text-slate-500">ID: #12347</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm text-slate-900">admin.martin@email.com</div>
+                            <div class="text-sm text-slate-500">+33 6 11 22 33 44</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                <span class="material-icons-round text-xs mr-1">admin_panel_settings</span>
+                                Administrateur
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="flex items-center">
+                                <div class="status-indicator status-online mr-2"></div>
+                                <span class="text-sm text-slate-900">En ligne</span>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                            Il y a 1 min
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <div class="flex items-center space-x-2">
+                                <button class="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors">
+                                    <span class="material-icons-round text-sm">edit</span>
+                                </button>
+                                <button class="p-1 text-slate-400 hover:text-orange-600 hover:bg-orange-50 rounded transition-colors">
+                                    <span class="material-icons-round text-sm">shield</span>
+                                </button>
+                                <button class="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors">
+                                    <span class="material-icons-round text-sm">delete</span>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+
+                    <!-- User Row 4 -->
+                    <tr class="table-row">
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <input type="checkbox" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0 w-10 h-10">
+                                    <div class="w-10 h-10 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg flex items-center justify-center text-white font-bold">
+                                        SB
+                                    </div>
+                                </div>
+                                <div class="ml-4">
+                                    <div class="text-sm font-medium text-slate-900">Sophie Bernard</div>
+                                    <div class="text-sm text-slate-500">ID: #12348</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm text-slate-900">sophie.bernard@email.com</div>
+                            <div class="text-sm text-slate-500">+33 6 55 66 77 88</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                <span class="material-icons-round text-xs mr-1">person</span>
+                                Client
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="flex items-center">
+                                <div class="status-indicator status-offline mr-2"></div>
+                                <span class="text-sm text-slate-900">Hors ligne</span>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                            Il y a 1j
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <div class="flex items-center space-x-2">
+                                <button class="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors">
+                                    <span class="material-icons-round text-sm">edit</span>
+                                </button>
+                                <button class="p-1 text-slate-400 hover:text-orange-600 hover:bg-orange-50 rounded transition-colors">
+                                    <span class="material-icons-round text-sm">shield</span>
+                                </button>
+                                <button class="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors">
+                                    <span class="material-icons-round text-sm">delete</span>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+
+                    <!-- User Row 5 -->
+                    <tr class="table-row">
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <input type="checkbox" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0 w-10 h-10">
+                                    <div class="w-10 h-10 bg-gradient-to-br from-green-500 to-green-600 rounded-lg flex items-center justify-center text-white font-bold">
+                                        LP
+                                    </div>
+                                </div>
+                                <div class="ml-4">
+                                    <div class="text-sm font-medium text-slate-900">Lucas Petit</div>
+                                    <div class="text-sm text-slate-500">ID: #12349</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm text-slate-900">lucas.petit@email.com</div>
+                            <div class="text-sm text-slate-500">+33 6 99 88 77 66</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                                <span class="material-icons-round text-xs mr-1">shield</span>
+                                Modérateur
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="flex items-center">
+                                <div class="status-indicator status-online mr-2"></div>
+                                <span class="text-sm text-slate-900">En ligne</span>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                            Il y a 15 min
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <div class="flex items-center space-x-2">
+                                <button class="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors">
+                                    <span class="material-icons-round text-sm">edit</span>
+                                </button>
+                                <button class="p-1 text-slate-400 hover:text-orange-600 hover:bg-orange-50 rounded transition-colors">
+                                    <span class="material-icons-round text-sm">shield</span>
+                                </button>
+                                <button class="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors">
+                                    <span class="material-icons-round text-sm">delete</span>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Footer -->
+        <div class="border-t border-slate-200 bg-slate-50 px-6 py-4">
+            <div class="flex items-center justify-between">
+                <div class="text-sm text-slate-600">
+                    Affichage de 5 utilisateurs sur 24
+                </div>
+                <div class="flex items-center space-x-2">
+                    <button class="px-4 py-2 text-sm text-slate-600 hover:text-slate-900 hover:bg-white rounded-lg transition-colors">
+                        Précédent
+                    </button>
+                    <div class="flex space-x-1">
+                        <button class="px-3 py-2 text-sm bg-blue-600 text-white rounded-lg">1</button>
+                        <button class="px-3 py-2 text-sm text-slate-600 hover:text-slate-900 hover:bg-white rounded-lg">2</button>
+                        <button class="px-3 py-2 text-sm text-slate-600 hover:text-slate-900 hover:bg-white rounded-lg">3</button>
+                        <button class="px-3 py-2 text-sm text-slate-600 hover:text-slate-900 hover:bg-white rounded-lg">4</button>
+                        <button class="px-3 py-2 text-sm text-slate-600 hover:text-slate-900 hover:bg-white rounded-lg">5</button>
+                    </div>
+                    <button class="px-4 py-2 text-sm text-slate-600 hover:text-slate-900 hover:bg-white rounded-lg transition-colors">
+                        Suivant
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Mockup Info -->
+    <div class="absolute top-4 left-4 bg-black/80 text-white px-3 py-1 rounded-lg text-sm">
+        Mockup 2: Professional Table Layout
+    </div>
+</body>
+</html>

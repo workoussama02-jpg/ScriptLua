@@ -11,6 +11,8 @@ CREATE TABLE users (
     clerk_id TEXT UNIQUE NOT NULL,
     email TEXT,
     name TEXT,
+    discord_username TEXT,
+    discord_avatar TEXT,
     role TEXT DEFAULT 'client' CHECK (role IN ('client', 'moderator', 'admin')),
     available BOOLEAN DEFAULT false,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -265,3 +267,9 @@ CREATE INDEX idx_messages_ticket_id ON messages(ticket_id);
 CREATE INDEX idx_users_clerk_id ON users(clerk_id);
 
 -- Consider partitioning the messages table if you expect high volume
+
+-- Database Migrations
+
+-- Add Discord fields to users table (run this if you have existing data)
+-- ALTER TABLE users ADD COLUMN discord_username TEXT;
+-- ALTER TABLE users ADD COLUMN discord_avatar TEXT;
