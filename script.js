@@ -2674,14 +2674,35 @@ async function createTicket() {
     console.log('🎫 Creating ticket for user:', currentUser.id, 'role:', currentUserRole);
 
     try {
-        const ticketData = {
-            title,
-            description,
-            priority: 'normal', // Default priority
-            status: 'open',
-            client_id: currentUser.id,
-            client_name: currentUser.firstName || currentUser.username || 'Client'
-        };
+        // Find an available moderator
+        const availableModerator = await findAvailableModerator();
+        
+        let ticketData;
+        if (availableModerator) {
+            // Assign to available moderator
+            ticketData = {
+                title,
+                description,
+                priority: 'normal',
+                status: 'in-progress', // Set to in-progress when assigned
+                client_id: currentUser.id,
+                client_name: currentUser.firstName || currentUser.username || 'Client',
+                assigned_to: availableModerator.clerk_id,
+                assigned_to_name: availableModerator.name
+            };
+            console.log('🎫 Assigning ticket to moderator:', availableModerator.name);
+        } else {
+            // No available moderators - create ticket in queue
+            ticketData = {
+                title,
+                description,
+                priority: 'normal',
+                status: 'open', // Keep as open, will be assigned when moderator becomes available
+                client_id: currentUser.id,
+                client_name: currentUser.firstName || currentUser.username || 'Client'
+            };
+            console.log('🎫 No available moderators - ticket will be queued');
+        }
 
         console.log('🎫 Ticket data:', ticketData);
 
@@ -2697,7 +2718,13 @@ async function createTicket() {
         }
 
         console.log('🎫 Ticket created successfully:', ticket);
-        showNotification('Ticket créé avec succès', 'success');
+        
+        if (availableModerator) {
+            showNotification(`Ticket créé et assigné à ${availableModerator.name}`, 'success');
+        } else {
+            showNotification('Aucun modérateur n\'est disponible pour le moment. Vous serez notifié dès qu\'un modérateur sera disponible.', 'warning');
+        }
+        
         closeModal('ticketModal');
         document.getElementById('ticketForm').reset();
         await loadTickets();
@@ -3172,7 +3199,84 @@ function subscribeToTicketUpdates() {
                 loadTickets();
             }
         })
+        .on('postgres_changes', {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'users',
+            filter: `role=eq.moderator`
+        }, async (payload) => {
+            console.log('👥 Moderator availability changed:', payload.new);
+            
+            // Check if moderator became available
+            if (payload.new.available && !payload.old.available) {
+                console.log('✅ Moderator became available:', payload.new.name);
+                await assignQueuedTickets(payload.new);
+            }
+        })
         .subscribe();
+}
+
+// Assign queued tickets to a newly available moderator
+async function assignQueuedTickets(availableModerator) {
+    try {
+        console.log('🔄 Assigning queued tickets to moderator:', availableModerator.name);
+        
+        // Find open tickets that are not assigned
+        const { data: queuedTickets, error } = await supabaseClient
+            .from('tickets')
+            .select('id, title, client_id, client_name')
+            .eq('status', 'open')
+            .is('assigned_to', null)
+            .order('created_at', { ascending: true }); // FIFO - oldest first
+        
+        if (error) {
+            console.error('Error fetching queued tickets:', error);
+            return;
+        }
+        
+        if (!queuedTickets || queuedTickets.length === 0) {
+            console.log('ℹ️ No queued tickets to assign');
+            return;
+        }
+        
+        console.log('📋 Found', queuedTickets.length, 'queued tickets');
+        
+        // Assign tickets to this moderator (limit to prevent overload)
+        const maxTicketsPerModerator = 3; // Configurable limit
+        const ticketsToAssign = queuedTickets.slice(0, maxTicketsPerModerator);
+        
+        for (const ticket of ticketsToAssign) {
+            try {
+                const { error: assignError } = await supabaseClient
+                    .from('tickets')
+                    .update({
+                        assigned_to: availableModerator.clerk_id,
+                        assigned_to_name: availableModerator.name,
+                        status: 'in-progress'
+                    })
+                    .eq('id', ticket.id);
+                
+                if (assignError) {
+                    console.error('Error assigning ticket', ticket.id, ':', assignError);
+                    continue;
+                }
+                
+                console.log('✅ Assigned ticket', ticket.id, 'to moderator', availableModerator.name);
+                
+                // Notify the client that their ticket has been assigned
+                // This would require a notification system, for now we'll just log it
+                console.log('📢 Should notify client', ticket.client_name, 'that ticket', ticket.title, 'is now assigned to', availableModerator.name);
+                
+            } catch (assignError) {
+                console.error('Error assigning individual ticket:', assignError);
+            }
+        }
+        
+        console.log('✅ Assigned', ticketsToAssign.length, 'tickets to moderator', availableModerator.name);
+        
+    } catch (error) {
+        console.error('❌ Error assigning queued tickets:', error);
+    }
 }
 
 // Subscribe to real-time messages for a specific ticket
@@ -3714,10 +3818,10 @@ async function loadUsersList() {
     }
 }
 
-// Load available moderators for assignment
-async function loadAvailableModerators() {
+// Load all moderators for admin assignment dropdown
+async function loadAllModerators() {
     try {
-        console.log('👥 Loading available moderators...');
+        console.log('👥 Loading all moderators...');
         const { data: moderators, error } = await supabaseClient
             .from('users')
             .select('clerk_id, name, available')
@@ -3730,11 +3834,82 @@ async function loadAvailableModerators() {
         }
 
         console.log('👥 Found', moderators?.length || 0, 'moderators:', moderators);
+        return moderators || [];
+    } catch (error) {
+        console.error('👥 Error loading moderators:', error);
+        return [];
+    }
+}
+
+// Load available moderators for automatic assignment
+async function loadAvailableModerators() {
+    try {
+        console.log('👥 Loading available moderators...');
+        const { data: moderators, error } = await supabaseClient
+            .from('users')
+            .select('clerk_id, name, available')
+            .eq('role', 'moderator')
+            .eq('available', true)
+            .order('name');
+
+        if (error) {
+            console.error('👥 Error loading moderators:', error);
+            throw error;
+        }
+
+        console.log('👥 Found', moderators?.length || 0, 'available moderators:', moderators);
         console.log('👥 Moderators details:', moderators?.map(m => ({ id: m.clerk_id, name: m.name, available: m.available })));
         return moderators || [];
     } catch (error) {
         console.error('👥 Error loading moderators:', error);
         return [];
+    }
+}
+
+// Find an available moderator for ticket assignment
+async function findAvailableModerator() {
+    try {
+        console.log('🔍 Finding available moderator...');
+        
+        // Get all available moderators
+        const availableModerators = await loadAvailableModerators();
+        
+        if (availableModerators.length === 0) {
+            console.log('⚠️ No available moderators found');
+            return null;
+        }
+        
+        // For now, use round-robin assignment (could be improved with load balancing)
+        // Get the moderator with the least assigned tickets
+        let selectedModerator = null;
+        let minTickets = Infinity;
+        
+        for (const moderator of availableModerators) {
+            const { data: assignedTickets, error } = await supabaseClient
+                .from('tickets')
+                .select('id', { count: 'exact' })
+                .eq('assigned_to', moderator.clerk_id)
+                .eq('status', 'in-progress');
+            
+            if (error) {
+                console.error('Error counting tickets for moderator:', moderator.clerk_id, error);
+                continue;
+            }
+            
+            const ticketCount = assignedTickets?.length || 0;
+            console.log('📊 Moderator', moderator.name, 'has', ticketCount, 'active tickets');
+            
+            if (ticketCount < minTickets) {
+                minTickets = ticketCount;
+                selectedModerator = moderator;
+            }
+        }
+        
+        console.log('✅ Selected moderator:', selectedModerator?.name, 'with', minTickets, 'active tickets');
+        return selectedModerator;
+    } catch (error) {
+        console.error('❌ Error finding available moderator:', error);
+        return null;
     }
 }
 
@@ -4377,7 +4552,7 @@ function toggleActionsMenu(menuId) {
                 
                 if (hasOnlyPlaceholder) {
                     console.log('👥 Loading moderators for menu:', menuId);
-                    loadAvailableModerators().then(moderators => {
+                    loadAllModerators().then(moderators => {
                         console.log('👥 Populating dropdown in menu', menuId, 'with', moderators.length, 'moderators');
                         assignSelect.innerHTML = '<option value="">Sélectionner un modérateur</option>';
                         
