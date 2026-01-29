@@ -1971,9 +1971,13 @@ async function loadUserRole() {
 
         const { data: userData, error } = await supabaseClient
             .from('users')
-            .select('role')
+            .select('role, active')
             .eq('clerk_id', currentUser.id)
             .single();
+
+        console.log('👤 Database query result:', { userData, error });
+        console.log('👤 Current user ID:', currentUser.id);
+        console.log('👤 Current user object:', currentUser);
 
         if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
             console.error('👤 Error loading user role:', error);
@@ -1981,6 +1985,20 @@ async function loadUserRole() {
         }
 
         if (userData) {
+            console.log('👤 User data from DB:', userData);
+            console.log('👤 User active status:', userData.active);
+            console.log('👤 User role from DB:', userData.role);
+
+            if (!userData.active) {
+                console.log('👤 User account is deactivated - blocking access');
+                showNotification('Accès non autorisé, contactez l\'administrateur pour plus d\'informations.', 'error');
+                // Hide all dashboards and show error state
+                ['client-dashboard', 'moderator-dashboard', 'admin-dashboard'].forEach(id => {
+                    const dashboard = document.getElementById(id);
+                    if (dashboard) dashboard.style.display = 'none';
+                });
+                return; // Don't proceed with role loading
+            }
             currentUserRole = userData.role;
             console.log('👤 User role loaded from DB:', currentUserRole);
 
@@ -2030,6 +2048,7 @@ async function loadUserRole() {
             }
         } else {
             console.log('👤 User not found in DB, creating new user record');
+            console.log('👤 No userData returned, will create new user with client role');
             // Create new user record with Discord information
             const discordAccount = currentUser.externalAccounts?.find(account => account.provider === 'discord');
             if (discordAccount) {
@@ -2067,7 +2086,8 @@ async function loadUserRole() {
                     name: currentUser.firstName || currentUser.username,
                     discord_username: discordAccount?.username || null,
                     discord_avatar: avatarUrl,
-                    role: 'client' // Default role
+                    role: 'client', // Default role
+                    active: true
                 }])
                 .select()
                 .single();
@@ -2083,6 +2103,7 @@ async function loadUserRole() {
         console.log('✅ Final user role:', currentUserRole);
     } catch (error) {
         console.error('❌ Error in loadUserRole:', error);
+        console.log('❌ Falling back to client role due to error');
         currentUserRole = 'client'; // Fallback
     }
 }
@@ -2164,6 +2185,37 @@ async function initializeUI() {
     initializeAvailabilityToggle();
     initializeFilterControls();
     console.log('✅ Modal handlers, availability toggle, and filter controls initialized');
+}
+
+// Update user role display in the UI
+function updateUserRoleDisplay() {
+    console.log('🎨 Updating user role display for role:', currentUserRole);
+
+    const roleLabels = {
+        'client': 'Client',
+        'moderator': 'Modérateur',
+        'admin': 'Administrateur'
+    };
+
+    const roleDisplay = roleLabels[currentUserRole] || 'Client';
+
+    // Update role display elements based on current dashboard
+    const userRoleElement = document.getElementById('userRole');
+    const moderatorUserRoleElement = document.getElementById('moderatorUserRole');
+    const adminUserRoleElement = document.getElementById('adminUserRole');
+
+    if (userRoleElement) {
+        userRoleElement.textContent = roleDisplay;
+        console.log('✅ Updated userRole element to:', roleDisplay);
+    }
+    if (moderatorUserRoleElement) {
+        moderatorUserRoleElement.textContent = roleDisplay;
+        console.log('✅ Updated moderatorUserRole element to:', roleDisplay);
+    }
+    if (adminUserRoleElement) {
+        adminUserRoleElement.textContent = roleDisplay;
+        console.log('✅ Updated adminUserRole element to:', roleDisplay);
+    }
 }
 
 // Initialize moderator-specific UI
@@ -3618,6 +3670,13 @@ function createUserTableRow(user) {
     const row = document.createElement('tr');
     row.className = 'table-row';
 
+    // Check if user is deactivated
+    const isDeactivated = !user.active;
+    if (isDeactivated) {
+        row.className += ' opacity-50 bg-gray-50';
+        row.style.opacity = '0.6';
+    }
+
     // Get Discord information from database (now properly stored)
     const discordUsername = user.discord_username;
     const discordAvatar = user.discord_avatar || null;
@@ -3636,7 +3695,8 @@ function createUserTableRow(user) {
         discord_username: user.discord_username,
         discord_avatar: user.discord_avatar,
         hasAvatar: !!user.discord_avatar,
-        role: user.role
+        role: user.role,
+        active: user.active
     });
 
     // Generate avatar HTML - use Discord avatar if available, otherwise fallback
@@ -3653,9 +3713,33 @@ function createUserTableRow(user) {
     const isOnline = Math.random() > 0.5;
     const lastActivity = isOnline ? 'Il y a 5 min' : `Il y a ${Math.floor(Math.random() * 24) + 1}h`;
 
+    // Determine status display
+    let statusDisplay = isOnline ? 'En ligne' : 'Hors ligne';
+    let statusClass = isOnline ? 'status-online' : 'status-offline';
+    if (isDeactivated) {
+        statusDisplay = 'Désactivé';
+        statusClass = 'status-offline'; // Use offline styling for deactivated
+    }
+
+    // Determine action button
+    let actionButtonHtml = '';
+    if (isDeactivated) {
+        actionButtonHtml = `
+            <button class="p-2 text-green-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors" onclick="reactivateUser('${user.id}', '${user.name || user.email}')" title="Réactiver le compte">
+                <span class="material-icons-round text-lg">restore</span>
+            </button>
+        `;
+    } else {
+        actionButtonHtml = `
+            <button class="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" onclick="deleteUser('${user.id}', '${user.name || user.email}')" title="Désactiver le compte">
+                <span class="material-icons-round text-lg">block</span>
+            </button>
+        `;
+    }
+
     row.innerHTML = `
         <td class="px-6 py-4 whitespace-nowrap">
-            <input type="checkbox" class="user-checkbox rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+            <input type="checkbox" class="user-checkbox rounded border-slate-300 text-blue-600 focus:ring-blue-500" ${isDeactivated ? 'disabled' : ''}>
         </td>
         <td class="px-6 py-4 whitespace-nowrap">
             <div class="flex items-center">
@@ -3672,7 +3756,7 @@ function createUserTableRow(user) {
             <div class="text-sm text-slate-900">${user.email}</div>
         </td>
         <td class="px-6 py-4 whitespace-nowrap">
-            <select onchange="updateUserRole('${user.id}', this.value)" class="px-3 py-1 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+            <select onchange="updateUserRole('${user.id}', this.value)" class="px-3 py-1 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" ${isDeactivated ? 'disabled' : ''}>
                 <option value="client" ${user.role === 'client' ? 'selected' : ''}>Client</option>
                 <option value="moderator" ${user.role === 'moderator' ? 'selected' : ''}>Modérateur</option>
                 <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Admin</option>
@@ -3680,24 +3764,16 @@ function createUserTableRow(user) {
         </td>
         <td class="px-6 py-4 whitespace-nowrap">
             <div class="flex items-center">
-                <div class="status-indicator ${isOnline ? 'status-online' : 'status-offline'} mr-2"></div>
-                <span class="text-sm text-slate-900">${isOnline ? 'En ligne' : 'Hors ligne'}</span>
+                <div class="status-indicator ${statusClass} mr-2"></div>
+                <span class="text-sm text-slate-900">${statusDisplay}</span>
             </div>
         </td>
         <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
             ${lastActivity}
         </td>
         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-            <div class="flex items-center space-x-2">
-                <button class="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors" onclick="editUser('${user.id}')" title="Modifier">
-                    <span class="material-icons-round text-sm">edit</span>
-                </button>
-                <button class="p-1 text-slate-400 hover:text-orange-600 hover:bg-orange-50 rounded transition-colors" onclick="manageUserPermissions('${user.id}')" title="Permissions">
-                    <span class="material-icons-round text-sm">shield</span>
-                </button>
-                <button class="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors" onclick="deleteUser('${user.id}')" title="Supprimer">
-                    <span class="material-icons-round text-sm">delete</span>
-                </button>
+            <div class="flex items-center justify-center">
+                ${actionButtonHtml}
             </div>
         </td>
     `;
@@ -3732,32 +3808,100 @@ function updateUserTableInfo(displayed, total) {
 }
 
 // User management action functions
-function editUser(userId) {
-    showNotification('Fonctionnalité de modification en cours de développement', 'info');
-}
+async function deleteUser(userId, userName) {
+    const userDisplayName = userName || 'cet utilisateur';
 
-function manageUserPermissions(userId) {
-    showNotification('Fonctionnalité de gestion des permissions en cours de développement', 'info');
-}
+    // Enhanced confirmation dialog
+    const confirmation = confirm(
+        `⚠️ DÉSACTIVATION DE COMPTE ⚠️\n\n` +
+        `Vous êtes sur le point de désactiver le compte de "${userDisplayName}".\n\n` +
+        `Cette action entraînera :\n` +
+        `• Blocage de l'accès à l'Espace Client\n` +
+        `• Conservation de toutes les données (tickets, messages)\n` +
+        `• L'utilisateur ne pourra plus se connecter à l'application\n\n` +
+        `⚠️ L'utilisateur conservera son compte Clerk,\n` +
+        `mais ne pourra plus accéder à l'application.\n\n` +
+        `Continuer la désactivation ?`
+    );
 
-async function deleteUser(userId) {
-    if (!confirm('Êtes-vous sûr de vouloir supprimer cet utilisateur ? Cette action est irréversible.')) {
+    if (!confirmation) {
+        return;
+    }
+
+    // Second confirmation for extra safety
+    const secondConfirmation = confirm(
+        `🔴 CONFIRMATION FINALE 🔴\n\n` +
+        `Désactiver le compte de "${userDisplayName}" ?\n\n` +
+        `L'utilisateur ne pourra plus accéder à l'application.`
+    );
+
+    if (!secondConfirmation) {
         return;
     }
 
     try {
-        const { error } = await supabaseClient
+        console.log('🚫 Starting user deactivation for:', userId, userDisplayName);
+
+        // Set user as inactive
+        const { error: deactivateError } = await supabaseClient
             .from('users')
-            .delete()
+            .update({ active: false })
             .eq('id', userId);
 
-        if (error) throw error;
+        if (deactivateError) {
+            console.error('Error deactivating user:', deactivateError);
+            throw new Error('Erreur lors de la désactivation de l\'utilisateur');
+        }
 
-        showNotification('Utilisateur supprimé avec succès', 'success');
+        console.log('✅ User deactivated successfully:', userDisplayName);
+        showNotification(`Utilisateur "${userDisplayName}" désactivé avec succès. Il ne pourra plus accéder à l'application.`, 'success');
+
+        // Refresh the users list
         await loadUsersList();
+
     } catch (error) {
-        console.error('Error deleting user:', error);
-        showNotification('Erreur lors de la suppression de l\'utilisateur', 'error');
+        console.error('❌ Error during user deactivation:', error);
+        showNotification(`Erreur lors de la désactivation: ${error.message}`, 'error');
+    }
+}
+
+// Reactivate a deactivated user
+async function reactivateUser(userId, userName) {
+    const userDisplayName = userName || 'cet utilisateur';
+
+    const confirmation = confirm(
+        `🔄 RÉACTIVATION DE COMPTE 🔄\n\n` +
+        `Voulez-vous réactiver le compte de "${userDisplayName}" ?\n\n` +
+        `L'utilisateur pourra à nouveau accéder à l'Espace Client.`
+    );
+
+    if (!confirmation) {
+        return;
+    }
+
+    try {
+        console.log('🔄 Starting user reactivation for:', userId, userDisplayName);
+
+        // Set user as active
+        const { error: reactivateError } = await supabaseClient
+            .from('users')
+            .update({ active: true })
+            .eq('id', userId);
+
+        if (reactivateError) {
+            console.error('Error reactivating user:', reactivateError);
+            throw new Error('Erreur lors de la réactivation de l\'utilisateur');
+        }
+
+        console.log('✅ User reactivated successfully:', userDisplayName);
+        showNotification(`Utilisateur "${userDisplayName}" réactivé avec succès.`, 'success');
+
+        // Refresh the users list
+        await loadUsersList();
+
+    } catch (error) {
+        console.error('❌ Error during user reactivation:', error);
+        showNotification(`Erreur lors de la réactivation: ${error.message}`, 'error');
     }
 }
 
@@ -4368,8 +4512,7 @@ window.assignTicket = assignTicket;
 window.openTicketChat = openTicketChat;
 window.sendMessage = sendMessage;
 window.updateUserRole = updateUserRole;
-window.editUser = editUser;
-window.manageUserPermissions = manageUserPermissions;
 window.deleteUser = deleteUser;
+window.reactivateUser = reactivateUser;
 window.openModal = openModal;
 window.closeModal = closeModal;

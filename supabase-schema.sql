@@ -15,6 +15,7 @@ CREATE TABLE users (
     discord_avatar TEXT,
     role TEXT DEFAULT 'client' CHECK (role IN ('client', 'moderator', 'admin')),
     available BOOLEAN DEFAULT false,
+    active BOOLEAN DEFAULT true,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -24,28 +25,16 @@ ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 
 -- Policies
 CREATE POLICY "Users can view their own data" ON users
-    FOR SELECT USING (auth.jwt() ->> 'sub' = clerk_id);
+    FOR SELECT USING (auth.jwt() ->> 'sub' = clerk_id AND active = true);
 
 CREATE POLICY "Users can update their own data" ON users
-    FOR UPDATE USING (auth.jwt() ->> 'sub' = clerk_id);
+    FOR UPDATE USING (auth.jwt() ->> 'sub' = clerk_id AND active = true);
 
 CREATE POLICY "Admins can view all users" ON users
-    FOR SELECT USING (
-        EXISTS (
-            SELECT 1 FROM users
-            WHERE clerk_id = auth.jwt() ->> 'sub'
-            AND role = 'admin'
-        )
-    );
+    FOR SELECT USING (is_admin(auth.jwt() ->> 'sub'));
 
 CREATE POLICY "Admins can update all users" ON users
-    FOR UPDATE USING (
-        EXISTS (
-            SELECT 1 FROM users
-            WHERE clerk_id = auth.jwt() ->> 'sub'
-            AND role = 'admin'
-        )
-    );
+    FOR UPDATE USING (is_admin(auth.jwt() ->> 'sub'));
 
 -- 2. tickets
 CREATE TABLE tickets (
@@ -67,36 +56,22 @@ ALTER TABLE tickets ENABLE ROW LEVEL SECURITY;
 
 -- Policies
 CREATE POLICY "Clients can view their own tickets" ON tickets
-    FOR SELECT USING (client_id = auth.jwt() ->> 'sub');
+    FOR SELECT USING (client_id = auth.jwt() ->> 'sub' AND EXISTS (SELECT 1 FROM users WHERE clerk_id = auth.jwt() ->> 'sub' AND active = true));
 
 CREATE POLICY "Clients can create tickets" ON tickets
-    FOR INSERT WITH CHECK (client_id = auth.jwt() ->> 'sub');
+    FOR INSERT WITH CHECK (client_id = auth.jwt() ->> 'sub' AND EXISTS (SELECT 1 FROM users WHERE clerk_id = auth.jwt() ->> 'sub' AND active = true));
 
 CREATE POLICY "Moderators can view assigned and open tickets" ON tickets
     FOR SELECT USING (
-        EXISTS (
-            SELECT 1 FROM users
-            WHERE clerk_id = auth.jwt() ->> 'sub'
-            AND role IN ('moderator', 'admin')
-        ) AND (
+        is_staff(auth.jwt() ->> 'sub') AND (
             assigned_to = auth.jwt() ->> 'sub' OR
             status = 'open' OR
-            EXISTS (
-                SELECT 1 FROM users
-                WHERE clerk_id = auth.jwt() ->> 'sub'
-                AND role = 'admin'
-            )
+            is_admin(auth.jwt() ->> 'sub')
         )
     );
 
 CREATE POLICY "Moderators can update tickets" ON tickets
-    FOR UPDATE USING (
-        EXISTS (
-            SELECT 1 FROM users
-            WHERE clerk_id = auth.jwt() ->> 'sub'
-            AND role IN ('moderator', 'admin')
-        )
-    );
+    FOR UPDATE USING (is_staff(auth.jwt() ->> 'sub'));
 
 -- 3. messages
 CREATE TABLE messages (
@@ -121,13 +96,9 @@ CREATE POLICY "Users can view messages for their tickets" ON messages
             AND (
                 tickets.client_id = auth.jwt() ->> 'sub' OR
                 tickets.assigned_to = auth.jwt() ->> 'sub' OR
-                EXISTS (
-                    SELECT 1 FROM users
-                    WHERE clerk_id = auth.jwt() ->> 'sub'
-                    AND role IN ('moderator', 'admin')
-                )
+                is_staff(auth.jwt() ->> 'sub')
             )
-        )
+        ) AND EXISTS (SELECT 1 FROM users WHERE clerk_id = auth.jwt() ->> 'sub' AND active = true)
     );
 
 CREATE POLICY "Users can insert messages for their tickets" ON messages
@@ -138,13 +109,9 @@ CREATE POLICY "Users can insert messages for their tickets" ON messages
             AND (
                 tickets.client_id = auth.jwt() ->> 'sub' OR
                 tickets.assigned_to = auth.jwt() ->> 'sub' OR
-                EXISTS (
-                    SELECT 1 FROM users
-                    WHERE clerk_id = auth.jwt() ->> 'sub'
-                    AND role IN ('moderator', 'admin')
-                )
+                is_staff(auth.jwt() ->> 'sub')
             )
-        )
+        ) AND EXISTS (SELECT 1 FROM users WHERE clerk_id = auth.jwt() ->> 'sub' AND active = true)
     );
 
 -- 4. internal_notes (for moderators/admins)
@@ -162,22 +129,10 @@ ALTER TABLE internal_notes ENABLE ROW LEVEL SECURITY;
 
 -- Policies (only moderators and admins)
 CREATE POLICY "Staff can view internal notes" ON internal_notes
-    FOR SELECT USING (
-        EXISTS (
-            SELECT 1 FROM users
-            WHERE clerk_id = auth.jwt() ->> 'sub'
-            AND role IN ('moderator', 'admin')
-        )
-    );
+    FOR SELECT USING (is_staff(auth.jwt() ->> 'sub'));
 
 CREATE POLICY "Staff can create internal notes" ON internal_notes
-    FOR INSERT WITH CHECK (
-        EXISTS (
-            SELECT 1 FROM users
-            WHERE clerk_id = auth.jwt() ->> 'sub'
-            AND role IN ('moderator', 'admin')
-        )
-    );
+    FOR INSERT WITH CHECK (is_staff(auth.jwt() ->> 'sub'));
 
 -- Database Functions
 
@@ -211,6 +166,19 @@ BEGIN
         (SELECT COUNT(*) FROM tickets) as total_tickets,
         (SELECT COUNT(*) FROM users WHERE role = 'moderator' AND available = true) as active_moderators,
         (SELECT COUNT(*) FROM users) as total_users;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Role checking functions to avoid RLS recursion
+CREATE OR REPLACE FUNCTION is_admin(user_clerk_id TEXT) RETURNS BOOLEAN AS $$
+BEGIN
+    RETURN EXISTS (SELECT 1 FROM users WHERE clerk_id = user_clerk_id AND role = 'admin' AND active = true);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION is_staff(user_clerk_id TEXT) RETURNS BOOLEAN AS $$
+BEGIN
+    RETURN EXISTS (SELECT 1 FROM users WHERE clerk_id = user_clerk_id AND role IN ('moderator', 'admin') AND active = true);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -269,6 +237,95 @@ CREATE INDEX idx_users_clerk_id ON users(clerk_id);
 -- Consider partitioning the messages table if you expect high volume
 
 -- Database Migrations
+
+-- Add active field to existing users table
+ALTER TABLE users ADD COLUMN active BOOLEAN DEFAULT true;
+
+-- Update existing policies to include active checks
+-- Note: You'll need to drop and recreate policies, or use ALTER POLICY if supported
+
+-- Drop existing policies
+DROP POLICY IF EXISTS "Users can view their own data" ON users;
+DROP POLICY IF EXISTS "Users can update their own data" ON users;
+DROP POLICY IF EXISTS "Admins can view all users" ON users;
+DROP POLICY IF EXISTS "Admins can update all users" ON users;
+
+-- Recreate policies with active checks
+CREATE POLICY "Users can view their own data" ON users
+    FOR SELECT USING (auth.jwt() ->> 'sub' = clerk_id AND active = true);
+
+CREATE POLICY "Users can update their own data" ON users
+    FOR UPDATE USING (auth.jwt() ->> 'sub' = clerk_id AND active = true);
+
+CREATE POLICY "Admins can view all users" ON users
+    FOR SELECT USING (is_admin(auth.jwt() ->> 'sub'));
+
+CREATE POLICY "Admins can update all users" ON users
+    FOR UPDATE USING (is_admin(auth.jwt() ->> 'sub'));
+
+-- Update tickets policies
+DROP POLICY IF EXISTS "Clients can view their own tickets" ON tickets;
+DROP POLICY IF EXISTS "Clients can create tickets" ON tickets;
+DROP POLICY IF EXISTS "Moderators can view assigned and open tickets" ON tickets;
+DROP POLICY IF EXISTS "Moderators can update tickets" ON tickets;
+
+CREATE POLICY "Clients can view their own tickets" ON tickets
+    FOR SELECT USING (client_id = auth.jwt() ->> 'sub' AND EXISTS (SELECT 1 FROM users WHERE clerk_id = auth.jwt() ->> 'sub' AND active = true));
+
+CREATE POLICY "Clients can create tickets" ON tickets
+    FOR INSERT WITH CHECK (client_id = auth.jwt() ->> 'sub' AND EXISTS (SELECT 1 FROM users WHERE clerk_id = auth.jwt() ->> 'sub' AND active = true));
+
+CREATE POLICY "Moderators can view assigned and open tickets" ON tickets
+    FOR SELECT USING (
+        is_staff(auth.jwt() ->> 'sub') AND (
+            assigned_to = auth.jwt() ->> 'sub' OR
+            status = 'open' OR
+            is_admin(auth.jwt() ->> 'sub')
+        )
+    );
+
+CREATE POLICY "Moderators can update tickets" ON tickets
+    FOR UPDATE USING (is_staff(auth.jwt() ->> 'sub'));
+
+-- Update messages policies
+DROP POLICY IF EXISTS "Users can view messages for their tickets" ON messages;
+DROP POLICY IF EXISTS "Users can insert messages for their tickets" ON messages;
+
+CREATE POLICY "Users can view messages for their tickets" ON messages
+    FOR SELECT USING (
+        EXISTS (
+            SELECT 1 FROM tickets
+            WHERE tickets.id = messages.ticket_id
+            AND (
+                tickets.client_id = auth.jwt() ->> 'sub' OR
+                tickets.assigned_to = auth.jwt() ->> 'sub' OR
+                is_staff(auth.jwt() ->> 'sub')
+            )
+        ) AND EXISTS (SELECT 1 FROM users WHERE clerk_id = auth.jwt() ->> 'sub' AND active = true)
+    );
+
+CREATE POLICY "Users can insert messages for their tickets" ON messages
+    FOR INSERT WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM tickets
+            WHERE tickets.id = messages.ticket_id
+            AND (
+                tickets.client_id = auth.jwt() ->> 'sub' OR
+                tickets.assigned_to = auth.jwt() ->> 'sub' OR
+                is_staff(auth.jwt() ->> 'sub')
+            )
+        ) AND EXISTS (SELECT 1 FROM users WHERE clerk_id = auth.jwt() ->> 'sub' AND active = true)
+    );
+
+-- Update internal_notes policies
+DROP POLICY IF EXISTS "Staff can view internal notes" ON internal_notes;
+DROP POLICY IF EXISTS "Staff can create internal notes" ON internal_notes;
+
+CREATE POLICY "Staff can view internal notes" ON internal_notes
+    FOR SELECT USING (is_staff(auth.jwt() ->> 'sub'));
+
+CREATE POLICY "Staff can create internal notes" ON internal_notes
+    FOR INSERT WITH CHECK (is_staff(auth.jwt() ->> 'sub'));
 
 -- Add Discord fields to users table (run this if you have existing data)
 -- ALTER TABLE users ADD COLUMN discord_username TEXT;
