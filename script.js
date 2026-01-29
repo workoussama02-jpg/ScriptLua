@@ -2290,7 +2290,7 @@ function initializeAdminFilters() {
     }
 
     // Load tickets after filters are initialized
-    setTimeout(() => loadTickets(), 100);
+    // Moved to initializeApp() to ensure proper timing
 }
 
 // Load tickets based on user role
@@ -2535,8 +2535,7 @@ function createTicketCard(ticket) {
     if (currentUserRole === 'admin' || currentUserRole === 'moderator') {
         actionsHtml = `
             <div class="relative">
-                <button class="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg transition-colors" 
-                        onclick="toggleActionsMenu('${actionsMenuId}'); event.stopPropagation();"
+                <button class="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg transition-colors"
                         title="Actions">
                     <span class="material-icons-round text-lg">settings</span>
                 </button>
@@ -2548,8 +2547,7 @@ function createTicketCard(ticket) {
             actionsHtml += `
                         <div class="px-4 py-2 border-b border-slate-200 dark:border-slate-700">
                             <label class="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Assigner à:</label>
-                            <select onchange="assignTicket('${ticket.id}', this.value); toggleActionsMenu('${actionsMenuId}');" 
-                                    class="w-full px-2 py-1 text-sm border border-slate-200 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-white">
+                            <select class="assign-select w-full px-2 py-1 text-sm border border-slate-200 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-white" onchange="assignTicket('${ticket.id}', this.value)">
                                 <option value="">Choisir un modérateur...</option>
                                 <!-- Moderators will be loaded here -->
                             </select>
@@ -2558,19 +2556,19 @@ function createTicketCard(ticket) {
 
         // Status actions
         if (ticket.status !== 'closed') {
-            actionsHtml += `<button class="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center" onclick="updateTicketStatus('${ticket.id}', 'closed'); toggleActionsMenu('${actionsMenuId}');">
+            actionsHtml += `<button class="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center action-btn" data-action="close" data-ticket-id="${ticket.id}">
                             <span class="material-icons-round text-sm mr-2">check_circle</span>Fermer le ticket
                         </button>`;
         }
 
         if (currentUserRole === 'moderator' && ticket.status === 'open') {
-            actionsHtml += `<button class="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center" onclick="updateTicketStatus('${ticket.id}', 'in-progress'); toggleActionsMenu('${actionsMenuId}');">
+            actionsHtml += `<button class="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center action-btn" data-action="take" data-ticket-id="${ticket.id}">
                             <span class="material-icons-round text-sm mr-2">play_arrow</span>Prendre en charge
                         </button>`;
         }
 
         if (ticket.status !== 'escalated') {
-            actionsHtml += `<button class="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center" onclick="updateTicketStatus('${ticket.id}', 'escalated'); toggleActionsMenu('${actionsMenuId}');">
+            actionsHtml += `<button class="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center action-btn" data-action="escalate" data-ticket-id="${ticket.id}">
                             <span class="material-icons-round text-sm mr-2">arrow_upward</span>Escalader
                         </button>`;
         }
@@ -2592,28 +2590,70 @@ function createTicketCard(ticket) {
         <td class="px-6 py-4 whitespace-nowrap" onclick="event.stopPropagation();">
             ${priorityHtml}
         </td>
+        ${currentUserRole === 'admin' ? `
         <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">${ticket.assigned_to_name || 'Non assigné'}</td>
         <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">${ticket.client_name || 'Client inconnu'}</td>
         <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">${new Date(ticket.created_at).toLocaleDateString('fr-FR')}</td>
         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium" onclick="event.stopPropagation();">
             ${actionsHtml}
-        </td>
-    `;
+        </td>` : currentUserRole === 'moderator' ? `
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">${ticket.client_name || 'Client inconnu'}</td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">${new Date(ticket.created_at).toLocaleDateString('fr-FR')}</td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium" onclick="event.stopPropagation();">
+            ${actionsHtml}
+        </td>` : `
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">${ticket.assigned_to_name || 'Non assigné'}</td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">${new Date(ticket.created_at).toLocaleDateString('fr-FR')}</td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium" onclick="event.stopPropagation();">
+            ${actionsHtml}
+        </td>`}`;
 
-    // Load moderators for admin assignment dropdown
-    if (currentUserRole === 'admin') {
-        const assignSelect = row.querySelector('select[onchange*="assignTicket"]');
-        if (assignSelect) {
-            loadAvailableModerators().then(moderators => {
-                moderators.forEach(moderator => {
-                    const option = document.createElement('option');
-                    option.value = moderator.clerk_id;
-                    option.textContent = `${moderator.name} ${moderator.available ? '(Disponible)' : '(Occupé)'}`;
-                    assignSelect.appendChild(option);
-                });
-            }).catch(error => {
-                console.error('Error loading moderators for assignment:', error);
+    // Add event listeners to action buttons
+    if (currentUserRole === 'admin' || currentUserRole === 'moderator') {
+        // Toggle menu button
+        const toggleBtn = row.querySelector('button[title="Actions"]');
+        if (toggleBtn) {
+            toggleBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                toggleActionsMenu(actionsMenuId);
             });
+        }
+
+        // Action buttons
+        const actionButtons = row.querySelectorAll('.action-btn');
+        actionButtons.forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const action = btn.getAttribute('data-action');
+                const ticketId = btn.getAttribute('data-ticket-id');
+
+                console.log('🎯 Action button clicked:', action, 'for ticket:', ticketId);
+
+                if (action === 'close') {
+                    await window.updateTicketStatus(ticketId, 'closed');
+                } else if (action === 'take') {
+                    await window.updateTicketStatus(ticketId, 'in-progress');
+                } else if (action === 'escalate') {
+                    await window.updateTicketStatus(ticketId, 'escalated');
+                }
+
+                toggleActionsMenu(actionsMenuId);
+            });
+        });
+
+        // Assignment dropdown for admin
+        if (currentUserRole === 'admin') {
+            const assignSelect = row.querySelector('.action-btn + div select');
+            if (assignSelect) {
+                assignSelect.addEventListener('change', async (e) => {
+                    const moderatorId = e.target.value;
+                    console.log('👤 Assignment dropdown changed, selected moderator:', moderatorId);
+                    if (moderatorId) {
+                        await window.assignTicket(ticket.id, moderatorId);
+                        toggleActionsMenu(actionsMenuId);
+                    }
+                });
+            }
         }
     }
 
@@ -2716,6 +2756,24 @@ async function assignTicket(ticketId, moderatorId) {
     } catch (error) {
         console.error('Error assigning ticket:', error);
         showNotification('Erreur lors de l\'assignation du ticket', 'error');
+    }
+}
+
+// Update ticket status
+async function updateTicketStatus(ticketId, newStatus) {
+    try {
+        const { error } = await supabaseClient
+            .from('tickets')
+            .update({ status: newStatus })
+            .eq('id', ticketId);
+
+        if (error) throw error;
+
+        showNotification(`Statut du ticket mis à jour: ${newStatus}`, 'success');
+        await loadTickets();
+    } catch (error) {
+        console.error('Error updating ticket status:', error);
+        showNotification('Erreur lors de la mise à jour du statut', 'error');
     }
 }
 
@@ -3672,6 +3730,7 @@ async function loadAvailableModerators() {
         }
 
         console.log('👥 Found', moderators?.length || 0, 'moderators:', moderators);
+        console.log('👥 Moderators details:', moderators?.map(m => ({ id: m.clerk_id, name: m.name, available: m.available })));
         return moderators || [];
     } catch (error) {
         console.error('👥 Error loading moderators:', error);
@@ -4289,6 +4348,8 @@ function closeModal(modalId) {
 
 // Toggle actions dropdown menu
 function toggleActionsMenu(menuId) {
+    console.log('🔧 toggleActionsMenu called with menuId:', menuId);
+    
     // Close all other action menus first
     const allMenus = document.querySelectorAll('[id^="actions-menu-"]');
     allMenus.forEach(menu => {
@@ -4299,8 +4360,45 @@ function toggleActionsMenu(menuId) {
 
     // Toggle the clicked menu
     const menu = document.getElementById(menuId);
+    console.log('🔧 Menu element found:', !!menu);
+    
     if (menu) {
+        const wasHidden = menu.classList.contains('hidden');
+        console.log('🔧 Menu was hidden:', wasHidden, 'currentUserRole:', currentUserRole);
+        
         menu.classList.toggle('hidden');
+        
+        // If opening the menu and it's for admin, load moderators if not loaded
+        if (wasHidden && currentUserRole === 'admin') {
+            const assignSelect = menu.querySelector('.assign-select');
+            
+            if (assignSelect) {
+                const hasOnlyPlaceholder = assignSelect.querySelector('option[value=""]') && assignSelect.options.length === 1;
+                
+                if (hasOnlyPlaceholder) {
+                    console.log('👥 Loading moderators for menu:', menuId);
+                    loadAvailableModerators().then(moderators => {
+                        console.log('👥 Populating dropdown in menu', menuId, 'with', moderators.length, 'moderators');
+                        assignSelect.innerHTML = '<option value="">Sélectionner un modérateur</option>';
+                        
+                        moderators.forEach(moderator => {
+                            const option = document.createElement('option');
+                            option.value = moderator.clerk_id;
+                            option.textContent = moderator.name || 'Modérateur';
+                            assignSelect.appendChild(option);
+                        });
+                        
+                        console.log('👥 Dropdown populated in menu', menuId);
+                    }).catch(error => {
+                        console.error('👥 Error loading moderators for menu', menuId, ':', error);
+                    });
+                }
+            } else {
+                console.error('🔧 Assign select not found in menu', menuId);
+            }
+        }
+    } else {
+        console.error('🔧 Menu element not found:', menuId);
     }
 }
 
@@ -4641,3 +4739,30 @@ window.reactivateUser = reactivateUser;
 window.toggleActionsMenu = toggleActionsMenu;
 window.openModal = openModal;
 window.closeModal = closeModal;
+
+// Initialize the application after all functions are exported
+function initializeApp() {
+    console.log('🚀 Initializing application...');
+
+    // Initialize Clerk authentication
+    initializeClerk();
+
+    // Initialize modal handlers
+    initializeModalHandlers();
+
+    // Initialize search functionality
+    initializeSearch();
+
+    // Initialize availability toggle for moderators
+    initializeAvailabilityToggle();
+
+    // Load initial data after a short delay to ensure DOM is ready
+    setTimeout(() => {
+        console.log('📊 Starting initial data load...');
+        initializeAdminFilters();
+        loadTickets();
+    }, 100);
+}
+
+// Call initializeApp when the script loads
+initializeApp();
