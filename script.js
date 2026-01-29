@@ -3366,9 +3366,8 @@ function initializeFilterControls() {
             filterButtons = document.querySelectorAll('#moderator-dashboard .segmented-control-item');
             break;
         case 'admin':
-            // Admin uses different filter system (statusFilter and moderatorFilter dropdowns)
-            initializeAdminFilters();
-            return;
+            filterButtons = document.querySelectorAll('#admin-dashboard .segmented-control-item');
+            break;
         default:
             filterButtons = document.querySelectorAll('.segmented-control-item');
     }
@@ -3439,7 +3438,8 @@ function applyTicketFilter(filterValue) {
                 const shouldShow = statusText === filterValue ||
                                  (filterValue === 'open' && statusText === 'ouvert') ||
                                  (filterValue === 'in-progress' && statusText === 'en cours') ||
-                                 (filterValue === 'closed' && statusText === 'fermé');
+                                 (filterValue === 'closed' && statusText === 'fermé') ||
+                                 (filterValue === 'escalated' && statusText === 'escaladé');
                 row.style.display = shouldShow ? '' : 'none';
             }
         }
@@ -5021,7 +5021,6 @@ function initializeApp() {
     // Load initial data after a short delay to ensure DOM is ready
     setTimeout(() => {
         console.log('📊 Starting initial data load...');
-        initializeAdminFilters();
         loadTickets();
     }, 100);
 }

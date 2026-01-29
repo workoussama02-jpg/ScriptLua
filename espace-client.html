@@ -539,17 +539,18 @@
 <div class="flex items-center justify-between">
 <h2 class="text-xl font-bold text-slate-800 dark:text-white">Tous les Tickets</h2>
 <div class="flex items-center space-x-4">
-<select id="statusFilter" class="px-3 py-2 border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white">
-<option value="all">Tous les statuts</option>
-<option value="open">Ouverts</option>
-<option value="in-progress">En cours</option>
-<option value="closed">Fermés</option>
-</select>
-<select id="moderatorFilter" class="px-3 py-2 border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white">
-<option value="all">Tous les modérateurs</option>
-<!-- Moderators will be loaded here -->
-</select>
-</div>
+                    <div class="flex bg-slate-100 dark:bg-slate-700 rounded-lg p-1">
+                        <button class="segmented-control-item segmented-control-item-active" data-filter="all">Tous</button>
+                        <button class="segmented-control-item segmented-control-item-inactive" data-filter="open">Ouverts</button>
+                        <button class="segmented-control-item segmented-control-item-inactive" data-filter="in-progress">En cours</button>
+                        <button class="segmented-control-item segmented-control-item-inactive" data-filter="closed">Fermés</button>
+                        <button class="segmented-control-item segmented-control-item-inactive" data-filter="escalated">Escaladés</button>
+                    </div>
+                    <select id="moderatorFilter" class="px-3 py-2 border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white">
+                        <option value="all">Tous les modérateurs</option>
+                        <!-- Moderators will be loaded here -->
+                    </select>
+                </div>
 </div>
 </div>
 
