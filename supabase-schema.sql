@@ -81,6 +81,7 @@ CREATE TABLE messages (
     sender_type TEXT NOT NULL CHECK (sender_type IN ('client', 'moderator', 'admin')),
     sender_name TEXT NOT NULL,
     sender_id TEXT NOT NULL,
+    sender_avatar TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
