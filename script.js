@@ -1990,13 +1990,8 @@ async function loadUserRole() {
             console.log('👤 User role from DB:', userData.role);
 
             if (!userData.active) {
-                console.log('👤 User account is deactivated - blocking access');
-                showNotification('Accès non autorisé, contactez l\'administrateur pour plus d\'informations.', 'error');
-                // Hide all dashboards and show error state
-                ['client-dashboard', 'moderator-dashboard', 'admin-dashboard'].forEach(id => {
-                    const dashboard = document.getElementById(id);
-                    if (dashboard) dashboard.style.display = 'none';
-                });
+                console.log('👤 User account is deactivated - showing blocked access message');
+                showBlockedAccessMessage();
                 return; // Don't proceed with role loading
             }
             currentUserRole = userData.role;
@@ -4503,6 +4498,112 @@ async function updateUserDiscordInfo(userId) {
     } catch (error) {
         console.error('Error in updateUserDiscordInfo:', error);
     }
+}
+
+// Show notification to user
+function showNotification(message, type = 'info') {
+    // Remove any existing notifications
+    const existingNotifications = document.querySelectorAll('.notification');
+    existingNotifications.forEach(notification => notification.remove());
+
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = `notification fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg max-w-sm ${getNotificationClasses(type)}`;
+    
+    notification.innerHTML = `
+        <div class="flex items-center space-x-3">
+            <div class="flex-shrink-0">
+                <span class="material-icons-round text-lg">${getNotificationIcon(type)}</span>
+            </div>
+            <div class="flex-1">
+                <p class="text-sm font-medium">${message}</p>
+            </div>
+            <div class="flex-shrink-0">
+                <button class="text-current hover:opacity-75" onclick="this.parentElement.parentElement.parentElement.remove()">
+                    <span class="material-icons-round text-sm">close</span>
+                </button>
+            </div>
+        </div>
+    `;
+
+    // Add to page
+    document.body.appendChild(notification);
+
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        if (notification.parentElement) {
+            notification.remove();
+        }
+    }, 5000);
+}
+
+// Get notification CSS classes based on type
+function getNotificationClasses(type) {
+    const classes = {
+        'success': 'bg-green-100 text-green-800 border border-green-200',
+        'error': 'bg-red-100 text-red-800 border border-red-200',
+        'warning': 'bg-yellow-100 text-yellow-800 border border-yellow-200',
+        'info': 'bg-blue-100 text-blue-800 border border-blue-200'
+    };
+    return classes[type] || classes.info;
+}
+
+// Get notification icon based on type
+function getNotificationIcon(type) {
+    const icons = {
+        'success': 'check_circle',
+        'error': 'error',
+        'warning': 'warning',
+        'info': 'info'
+    };
+    return icons[type] || icons.info;
+}
+
+// Show blocked access message for deactivated users
+function showBlockedAccessMessage() {
+    // Hide all dashboards first
+    ['client-dashboard', 'moderator-dashboard', 'admin-dashboard'].forEach(id => {
+        const dashboard = document.getElementById(id);
+        if (dashboard) dashboard.style.display = 'none';
+    });
+
+    // Create blocked access overlay
+    const blockedOverlay = document.createElement('div');
+    blockedOverlay.id = 'blocked-access-overlay';
+    blockedOverlay.className = 'fixed inset-0 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center z-50';
+    
+    blockedOverlay.innerHTML = `
+        <div class="max-w-md w-full mx-4">
+            <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl p-8 text-center">
+                <div class="w-20 h-20 bg-red-100 dark:bg-red-900 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <span class="material-icons-round text-4xl text-red-600 dark:text-red-400">block</span>
+                </div>
+                <h2 class="text-2xl font-bold text-slate-800 dark:text-white mb-4">
+                    Accès non autorisé
+                </h2>
+                <p class="text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">
+                    Votre compte a été désactivé. Vous ne pouvez plus accéder à l'Espace Client.
+                </p>
+                <p class="text-sm text-slate-500 dark:text-slate-500 mb-6">
+                    Pour plus d'informations, contactez l'administrateur.
+                </p>
+                <div class="flex flex-col space-y-3">
+                    <a href="https://discord.gg/C5FP62dRU3" target="_blank" 
+                       class="inline-flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors">
+                        <span class="material-icons-round">discord</span>
+                        <span>Contacter l'administrateur</span>
+                    </a>
+                    <button onclick="window.location.href='index.html'" 
+                            class="text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white font-medium transition-colors">
+                        Retour à l'accueil
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Add to page
+    document.body.appendChild(blockedOverlay);
 }
 
 // Export functions for global access
