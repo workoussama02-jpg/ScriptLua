@@ -2485,7 +2485,7 @@ function displayTickets(tickets) {
 // Create ticket card element (now creates table rows)
 function createTicketCard(ticket) {
     const row = document.createElement('tr');
-    row.className = 'hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer transition-colors';
+    row.className = 'hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer transition-colors relative';
     row.onclick = () => openTicketChat(ticket.id);
 
     const statusClass = ticket.status.toLowerCase().replace(' ', '-');
@@ -2506,93 +2506,119 @@ function createTicketCard(ticket) {
     const lastMessage = ticket.messages?.[ticket.messages.length - 1];
     const lastActivity = lastMessage ? new Date(lastMessage.created_at).toLocaleString('fr-FR') : 'Aucune activité';
 
+    // Extract problem type from title (remove "Support: " prefix)
+    const problemType = ticket.title.replace(/^Support:\s*/, '');
+
+    // Short ticket ID (first 8 characters)
+    const shortId = ticket.id.substring(0, 8);
+
+    // Priority dropdown for admins and moderators
+    let priorityHtml = '';
+    if (currentUserRole === 'admin' || currentUserRole === 'moderator') {
+        priorityHtml = `
+            <select onchange="updateTicketPriority('${ticket.id}', this.value); event.stopPropagation();" 
+                    class="px-2 py-1 text-xs border border-slate-200 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-white cursor-pointer hover:border-slate-300 dark:hover:border-slate-500 transition-colors">
+                <option value="low" ${ticket.priority === 'low' ? 'selected' : ''}>Faible</option>
+                <option value="normal" ${ticket.priority === 'normal' ? 'selected' : ''}>Normal</option>
+                <option value="high" ${ticket.priority === 'high' ? 'selected' : ''}>Élevé</option>
+                <option value="urgent" ${ticket.priority === 'urgent' ? 'selected' : ''}>Urgent</option>
+            </select>
+        `;
+    } else {
+        priorityHtml = `<span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full ${priorityColors[ticket.priority] || 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200'}">${ticket.priority}</span>`;
+    }
+
+    // Actions dropdown menu
+    const actionsMenuId = `actions-menu-${ticket.id}`;
     let actionsHtml = '';
 
-    if (currentUserRole === 'admin') {
-        // Admin can assign, close, or escalate tickets
+    if (currentUserRole === 'admin' || currentUserRole === 'moderator') {
         actionsHtml = `
-            <div class="flex items-center space-x-2">
-                <select class="assign-select px-2 py-1 text-sm border border-slate-200 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-white" data-ticket-id="${ticket.id}">
-                    <option value="">Assigner à...</option>
-                    <!-- Moderators will be loaded here -->
-                </select>
-                ${ticket.status !== 'closed' ? `<button class="action-btn px-3 py-1 text-sm bg-red-500 hover:bg-red-600 text-white rounded transition-colors" data-ticket-id="${ticket.id}" data-action="closed">Fermer</button>` : ''}
-                ${ticket.status !== 'escalated' ? `<button class="action-btn px-3 py-1 text-sm bg-orange-500 hover:bg-orange-600 text-white rounded transition-colors" data-ticket-id="${ticket.id}" data-action="escalated">Escalader</button>` : ''}
-            </div>
-        `;
-    } else if (currentUserRole === 'moderator') {
-        // Moderator actions
-        actionsHtml = `
-            <div class="flex items-center space-x-2">
-                ${ticket.status !== 'closed' ? `<button class="action-btn px-3 py-1 text-sm bg-red-500 hover:bg-red-600 text-white rounded transition-colors" data-ticket-id="${ticket.id}" data-action="closed">Fermer</button>` : ''}
-                ${ticket.status === 'open' ? `<button class="action-btn px-3 py-1 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors" data-ticket-id="${ticket.id}" data-action="in-progress">Prendre</button>` : ''}
-                ${ticket.status !== 'escalated' ? `<button class="action-btn px-3 py-1 text-sm bg-orange-500 hover:bg-orange-600 text-white rounded transition-colors" data-ticket-id="${ticket.id}" data-action="escalated">Escalader</button>` : ''}
-            </div>
-        `;
+            <div class="relative">
+                <button class="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg transition-colors" 
+                        onclick="toggleActionsMenu('${actionsMenuId}'); event.stopPropagation();"
+                        title="Actions">
+                    <span class="material-icons-round text-lg">settings</span>
+                </button>
+                <div id="${actionsMenuId}" class="absolute right-0 mt-1 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 z-10 hidden">
+                    <div class="py-1">`;
+
+        // Assignment dropdown for admin
+        if (currentUserRole === 'admin') {
+            actionsHtml += `
+                        <div class="px-4 py-2 border-b border-slate-200 dark:border-slate-700">
+                            <label class="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Assigner à:</label>
+                            <select onchange="assignTicket('${ticket.id}', this.value); toggleActionsMenu('${actionsMenuId}');" 
+                                    class="w-full px-2 py-1 text-sm border border-slate-200 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-white">
+                                <option value="">Choisir un modérateur...</option>
+                                <!-- Moderators will be loaded here -->
+                            </select>
+                        </div>`;
+        }
+
+        // Status actions
+        if (ticket.status !== 'closed') {
+            actionsHtml += `<button class="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center" onclick="updateTicketStatus('${ticket.id}', 'closed'); toggleActionsMenu('${actionsMenuId}');">
+                            <span class="material-icons-round text-sm mr-2">check_circle</span>Fermer le ticket
+                        </button>`;
+        }
+
+        if (currentUserRole === 'moderator' && ticket.status === 'open') {
+            actionsHtml += `<button class="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center" onclick="updateTicketStatus('${ticket.id}', 'in-progress'); toggleActionsMenu('${actionsMenuId}');">
+                            <span class="material-icons-round text-sm mr-2">play_arrow</span>Prendre en charge
+                        </button>`;
+        }
+
+        if (ticket.status !== 'escalated') {
+            actionsHtml += `<button class="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center" onclick="updateTicketStatus('${ticket.id}', 'escalated'); toggleActionsMenu('${actionsMenuId}');">
+                            <span class="material-icons-round text-sm mr-2">arrow_upward</span>Escalader
+                        </button>`;
+        }
+
+        actionsHtml += `
+                    </div>
+                </div>
+            </div>`;
     }
 
     row.innerHTML = `
-        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900 dark:text-white">#${ticket.id}</td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900 dark:text-white">#${shortId}</td>
         <td class="px-6 py-4 whitespace-nowrap">
-            <div class="text-sm font-medium text-slate-900 dark:text-white">${ticket.title}</div>
+            <div class="text-sm font-medium text-slate-900 dark:text-white">${problemType}</div>
         </td>
         <td class="px-6 py-4 whitespace-nowrap">
             <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full ${statusColors[ticket.status] || 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200'}">${ticket.status}</span>
         </td>
-        <td class="px-6 py-4 whitespace-nowrap">
-            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full ${priorityColors[ticket.priority] || 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200'}">${ticket.priority}</span>
+        <td class="px-6 py-4 whitespace-nowrap" onclick="event.stopPropagation();">
+            ${priorityHtml}
         </td>
         <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">${ticket.assigned_to_name || 'Non assigné'}</td>
         <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">${ticket.client_name || 'Client inconnu'}</td>
         <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">${new Date(ticket.created_at).toLocaleDateString('fr-FR')}</td>
-        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium" onclick="event.stopPropagation()">${actionsHtml}</td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium" onclick="event.stopPropagation();">
+            ${actionsHtml}
+        </td>
     `;
 
-    // Add event listeners to action buttons to prevent row click
-    const actionButtons = row.querySelectorAll('.action-btn');
-    actionButtons.forEach(button => {
-        button.addEventListener('click', function(e) {
-            e.stopPropagation(); // Prevent the row click from firing
-            const ticketId = this.getAttribute('data-ticket-id');
-            const action = this.getAttribute('data-action');
-            updateTicketStatus(ticketId, action);
-        });
-    });
-
-    // Handle assignment dropdown
-    const assignSelect = row.querySelector('.assign-select');
-    if (assignSelect) {
-        // Prevent click events on the dropdown from bubbling to the row
-        assignSelect.addEventListener('click', function(e) {
-            e.stopPropagation();
-        });
-
-        assignSelect.addEventListener('change', function(e) {
-            e.stopPropagation(); // Prevent the row click from firing
-            const ticketId = this.getAttribute('data-ticket-id');
-            const moderatorId = this.value;
-            if (moderatorId) {
-                assignTicket(ticketId, moderatorId);
-            }
-        });
-
-        // Load moderators for admin assignment dropdown
-        loadAvailableModerators().then(moderators => {
-            moderators.forEach(moderator => {
-                const option = document.createElement('option');
-                option.value = moderator.clerk_id;
-                option.textContent = `${moderator.name} ${moderator.available ? '(Disponible)' : '(Occupé)'}`;
-                assignSelect.appendChild(option);
+    // Load moderators for admin assignment dropdown
+    if (currentUserRole === 'admin') {
+        const assignSelect = row.querySelector('select[onchange*="assignTicket"]');
+        if (assignSelect) {
+            loadAvailableModerators().then(moderators => {
+                moderators.forEach(moderator => {
+                    const option = document.createElement('option');
+                    option.value = moderator.clerk_id;
+                    option.textContent = `${moderator.name} ${moderator.available ? '(Disponible)' : '(Occupé)'}`;
+                    assignSelect.appendChild(option);
+                });
+            }).catch(error => {
+                console.error('Error loading moderators for assignment:', error);
             });
-        }).catch(error => {
-            console.error('Error loading moderators for assignment:', error);
-        });
+        }
     }
 
     return row;
 }
-
-// Create new ticket
 async function createTicket() {
     const problemType = document.getElementById('problemType').value;
     const description = document.getElementById('ticketDescription').value.trim();
@@ -2641,28 +2667,21 @@ async function createTicket() {
     }
 }
 
-// Update ticket status
-async function updateTicketStatus(ticketId, newStatus) {
+// Update ticket priority
+async function updateTicketPriority(ticketId, newPriority) {
     try {
-        const updateData = { status: newStatus };
-
-        if (newStatus === 'in-progress' && currentUserRole === 'moderator') {
-            updateData.assigned_to = currentUser.id;
-            updateData.assigned_to_name = currentUser.firstName || currentUser.username;
-        }
-
         const { error } = await supabaseClient
             .from('tickets')
-            .update(updateData)
+            .update({ priority: newPriority })
             .eq('id', ticketId);
 
         if (error) throw error;
 
-        showNotification(`Ticket ${newStatus === 'closed' ? 'fermé' : newStatus === 'in-progress' ? 'pris en charge' : 'escaladé'}`, 'success');
+        showNotification(`Priorité du ticket mise à jour: ${newPriority}`, 'success');
         await loadTickets();
     } catch (error) {
-        console.error('Error updating ticket status:', error);
-        showNotification('Erreur lors de la mise à jour du ticket', 'error');
+        console.error('Error updating ticket priority:', error);
+        showNotification('Erreur lors de la mise à jour de la priorité', 'error');
     }
 }
 
@@ -4268,29 +4287,32 @@ function closeModal(modalId) {
     }
 }
 
-// Enhanced notification system
-function showNotification(message, type = 'info') {
-    // Remove existing notifications
-    const existingNotifications = document.querySelectorAll('.notification');
-    existingNotifications.forEach(notification => notification.remove());
-
-    // Create notification element
-    const notification = document.createElement('div');
-    notification.className = `notification ${type}`;
-    notification.innerHTML = `
-        <span>${message}</span>
-        <button onclick="this.parentElement.remove()" style="margin-left: 10px; background: none; border: none; color: white; cursor: pointer;">×</button>
-    `;
-
-    document.body.appendChild(notification);
-
-    // Auto-remove after 5 seconds
-    setTimeout(() => {
-        if (notification.parentElement) {
-            notification.remove();
+// Toggle actions dropdown menu
+function toggleActionsMenu(menuId) {
+    // Close all other action menus first
+    const allMenus = document.querySelectorAll('[id^="actions-menu-"]');
+    allMenus.forEach(menu => {
+        if (menu.id !== menuId) {
+            menu.classList.add('hidden');
         }
-    }, 5000);
+    });
+
+    // Toggle the clicked menu
+    const menu = document.getElementById(menuId);
+    if (menu) {
+        menu.classList.toggle('hidden');
+    }
 }
+
+// Close action menus when clicking outside
+document.addEventListener('click', function(e) {
+    if (!e.target.closest('[id^="actions-menu-"]') && !e.target.closest('button[onclick*="toggleActionsMenu"]')) {
+        const allMenus = document.querySelectorAll('[id^="actions-menu-"]');
+        allMenus.forEach(menu => {
+            menu.classList.add('hidden');
+        });
+    }
+});
 
 // Initialize search functionality
 function initializeSearch() {
@@ -4609,11 +4631,13 @@ function showBlockedAccessMessage() {
 // Export functions for global access
 window.createTicket = createTicket;
 window.updateTicketStatus = updateTicketStatus;
+window.updateTicketPriority = updateTicketPriority;
 window.assignTicket = assignTicket;
 window.openTicketChat = openTicketChat;
 window.sendMessage = sendMessage;
 window.updateUserRole = updateUserRole;
 window.deleteUser = deleteUser;
 window.reactivateUser = reactivateUser;
+window.toggleActionsMenu = toggleActionsMenu;
 window.openModal = openModal;
 window.closeModal = closeModal;
