@@ -4524,7 +4524,7 @@ function closeModal(modalId) {
 // Toggle actions dropdown menu
 function toggleActionsMenu(menuId) {
     console.log('🔧 toggleActionsMenu called with menuId:', menuId);
-    
+
     // Close all other action menus first
     const allMenus = document.querySelectorAll('[id^="actions-menu-"]');
     allMenus.forEach(menu => {
@@ -4536,33 +4536,40 @@ function toggleActionsMenu(menuId) {
     // Toggle the clicked menu
     const menu = document.getElementById(menuId);
     console.log('🔧 Menu element found:', !!menu);
-    
+
     if (menu) {
         const wasHidden = menu.classList.contains('hidden');
         console.log('🔧 Menu was hidden:', wasHidden, 'currentUserRole:', currentUserRole);
-        
-        menu.classList.toggle('hidden');
-        
+
+        if (wasHidden) {
+            // Show the menu and position it
+            menu.classList.remove('hidden');
+            positionActionsMenu(menuId);
+        } else {
+            // Hide the menu
+            menu.classList.add('hidden');
+        }
+
         // If opening the menu and it's for admin, load moderators if not loaded
         if (wasHidden && currentUserRole === 'admin') {
             const assignSelect = menu.querySelector('.assign-select');
-            
+
             if (assignSelect) {
                 const hasOnlyPlaceholder = assignSelect.querySelector('option[value=""]') && assignSelect.options.length === 1;
-                
+
                 if (hasOnlyPlaceholder) {
                     console.log('👥 Loading moderators for menu:', menuId);
                     loadAllModerators().then(moderators => {
                         console.log('👥 Populating dropdown in menu', menuId, 'with', moderators.length, 'moderators');
                         assignSelect.innerHTML = '<option value="">Sélectionner un modérateur</option>';
-                        
+
                         moderators.forEach(moderator => {
                             const option = document.createElement('option');
                             option.value = moderator.clerk_id;
                             option.textContent = moderator.name || 'Modérateur';
                             assignSelect.appendChild(option);
                         });
-                        
+
                         console.log('👥 Dropdown populated in menu', menuId);
                     }).catch(error => {
                         console.error('👥 Error loading moderators for menu', menuId, ':', error);
@@ -4577,14 +4584,94 @@ function toggleActionsMenu(menuId) {
     }
 }
 
+// Position the actions menu above the gear icon
+function positionActionsMenu(menuId) {
+    const menu = document.getElementById(menuId);
+    if (!menu) return;
+
+    // Find the gear button that triggered this menu
+    const gearButton = menu.previousElementSibling;
+    if (!gearButton) return;
+
+    // Get button and menu dimensions
+    const buttonRect = gearButton.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    const viewportHeight = window.innerHeight;
+    const viewportWidth = window.innerWidth;
+
+    // Calculate available space
+    const spaceAbove = buttonRect.top;
+    const spaceBelow = viewportHeight - buttonRect.bottom;
+    const menuHeight = menuRect.height || 200; // Estimate if not yet rendered
+
+    // Reset any previous positioning
+    menu.style.top = '';
+    menu.style.bottom = '';
+    menu.style.left = '';
+    menu.style.right = '';
+
+    // Position horizontally - center the menu on the button
+    const menuWidth = menuRect.width || 192; // w-48 = 192px
+    const leftPosition = buttonRect.left + (buttonRect.width / 2) - (menuWidth / 2);
+
+    // Ensure menu doesn't go off-screen horizontally
+    const finalLeft = Math.max(10, Math.min(leftPosition, viewportWidth - menuWidth - 10));
+    menu.style.left = finalLeft + 'px';
+
+    // Position vertically - prefer above, fallback to below
+    if (spaceAbove >= menuHeight + 10) {
+        // Enough space above - position above the button
+        menu.style.bottom = (viewportHeight - buttonRect.top + 5) + 'px';
+        menu.style.top = 'auto';
+        console.log('📍 Positioning menu above button');
+    } else if (spaceBelow >= menuHeight + 10) {
+        // Enough space below - position below the button
+        menu.style.top = (buttonRect.bottom + 5) + 'px';
+        menu.style.bottom = 'auto';
+        console.log('📍 Positioning menu below button');
+    } else {
+        // Not enough space in either direction - position above and let it scroll
+        menu.style.bottom = (viewportHeight - buttonRect.top + 5) + 'px';
+        menu.style.top = 'auto';
+        console.log('📍 Positioning menu above button (limited space)');
+    }
+
+    // Ensure menu is visible by setting position fixed
+    menu.style.position = 'fixed';
+    menu.style.zIndex = '50';
+
+    console.log('📍 Menu positioned:', {
+        menuId,
+        buttonTop: buttonRect.top,
+        buttonBottom: buttonRect.bottom,
+        spaceAbove,
+        spaceBelow,
+        menuHeight,
+        finalLeft,
+        position: menu.style.top !== 'auto' ? 'below' : 'above'
+    });
+}
+
 // Close action menus when clicking outside
 document.addEventListener('click', function(e) {
-    if (!e.target.closest('[id^="actions-menu-"]') && !e.target.closest('button[onclick*="toggleActionsMenu"]')) {
-        const allMenus = document.querySelectorAll('[id^="actions-menu-"]');
-        allMenus.forEach(menu => {
-            menu.classList.add('hidden');
-        });
+    // Don't close if clicking on a gear button or inside a menu
+    if (e.target.closest('[id^="actions-menu-"]') || e.target.closest('button[title="Actions"]')) {
+        return;
     }
+
+    // Close all open action menus
+    const allMenus = document.querySelectorAll('[id^="actions-menu-"]:not(.hidden)');
+    allMenus.forEach(menu => {
+        menu.classList.add('hidden');
+    });
+});
+
+// Reposition menus on window resize
+window.addEventListener('resize', function() {
+    const openMenus = document.querySelectorAll('[id^="actions-menu-"]:not(.hidden)');
+    openMenus.forEach(menu => {
+        positionActionsMenu(menu.id);
+    });
 });
 
 // Initialize search functionality
