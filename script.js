@@ -3704,10 +3704,10 @@ async function loadModeratorStats() {
         });
 
         // Update UI
-        const totalTicketsEl = document.getElementById('totalTickets');
-        const openTicketsEl = document.getElementById('openTickets');
-        const inProgressTicketsEl = document.getElementById('inProgressTickets');
-        const closedTicketsEl = document.getElementById('closedTickets');
+        const totalTicketsEl = document.getElementById('moderatorTotalTickets');
+        const openTicketsEl = document.getElementById('moderatorOpenTickets');
+        const inProgressTicketsEl = document.getElementById('moderatorInProgressTickets');
+        const closedTicketsEl = document.getElementById('moderatorClosedTickets');
 
         if (totalTicketsEl) totalTicketsEl.textContent = assignedCount;
         if (openTicketsEl) openTicketsEl.textContent = openCount;
@@ -3718,10 +3718,10 @@ async function loadModeratorStats() {
     } catch (error) {
         console.error('❌ Error loading moderator stats:', error);
         // Set defaults
-        document.getElementById('totalTickets').textContent = '0';
-        document.getElementById('openTickets').textContent = '0';
-        document.getElementById('inProgressTickets').textContent = '0';
-        document.getElementById('closedTickets').textContent = '0';
+        document.getElementById('moderatorTotalTickets').textContent = '0';
+        document.getElementById('moderatorOpenTickets').textContent = '0';
+        document.getElementById('moderatorInProgressTickets').textContent = '0';
+        document.getElementById('moderatorClosedTickets').textContent = '0';
     }
 }
 
