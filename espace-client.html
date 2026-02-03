@@ -694,7 +694,7 @@
 
 <!-- User Management Modal (Admin only) -->
 <div class="modal hidden" id="userManagementModal">
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-7xl h-[700px] flex flex-col overflow-hidden">
+    <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-7xl h-[700px] flex flex-col overflow-hidden">
 
         <!-- Header -->
         <div class="bg-gradient-to-r from-slate-800 to-slate-700 text-white p-6 flex items-center justify-between">
@@ -728,12 +728,12 @@
         </div>
 
         <!-- Toolbar -->
-        <div class="bg-slate-50 px-6 py-4 border-b border-slate-200">
+        <div class="bg-slate-50 dark:bg-slate-700 px-6 py-4 border-b border-slate-200 dark:border-slate-700">
             <div class="flex items-center justify-between">
                 <div class="flex items-center space-x-4">
                     <div class="flex items-center space-x-2">
-                        <span class="text-sm text-slate-600">Afficher:</span>
-                        <select class="px-3 py-1 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" id="userPageSize">
+                        <span class="text-sm text-slate-600 dark:text-slate-300">Afficher:</span>
+                        <select class="px-3 py-1 border border-slate-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500" id="userPageSize">
                             <option value="10">10</option>
                             <option value="25">25</option>
                             <option value="50">50</option>
@@ -741,8 +741,8 @@
                         </select>
                     </div>
                     <div class="flex items-center space-x-2">
-                        <span class="text-sm text-slate-600">Trier par:</span>
-                        <select class="px-3 py-1 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" id="userSortBy">
+                        <span class="text-sm text-slate-600 dark:text-slate-300">Trier par:</span>
+                        <select class="px-3 py-1 border border-slate-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500" id="userSortBy">
                             <option value="created_at">Date d'inscription</option>
                             <option value="name">Nom</option>
                             <option value="email">Email</option>
@@ -756,41 +756,41 @@
         <!-- Table -->
         <div class="flex-1 overflow-y-auto">
             <table class="w-full">
-                <thead class="bg-slate-50 sticky top-0">
-                    <tr class="border-b border-slate-200">
-                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                <thead class="bg-slate-50 dark:bg-slate-700 sticky top-0">
+                    <tr class="border-b border-slate-200 dark:border-slate-700">
+                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
                             <input type="checkbox" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500" id="selectAllUsers">
                         </th>
-                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
                             Utilisateur
                         </th>
-                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
                             Contact
                         </th>
-                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
                             Rôle
                         </th>
-                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
                             Statut
                         </th>
-                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
                             Dernière activité
                         </th>
-                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                        <th class="px-6 py-4 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
                             Actions
                         </th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-slate-200" id="usersTableBody">
+                <tbody class="divide-y divide-slate-200 dark:divide-slate-700" id="usersTableBody">
                     <!-- Users will be loaded here -->
                 </tbody>
             </table>
         </div>
 
         <!-- Footer -->
-        <div class="border-t border-slate-200 bg-slate-50 px-6 py-4">
+        <div class="border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-700 px-6 py-4">
             <div class="flex items-center justify-between">
-                <div class="text-sm text-slate-600" id="userTableInfo">
+                <div class="text-sm text-slate-600 dark:text-slate-300" id="userTableInfo">
                     Affichage de 0 utilisateurs sur 0
                 </div>
                 <div class="flex items-center space-x-2" id="userPagination">

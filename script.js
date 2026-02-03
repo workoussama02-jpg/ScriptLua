@@ -1901,6 +1901,9 @@ function escapeHtml(text) {
 const SUPABASE_URL = 'https://ndniosrqgrzcsqnfabxr.supabase.co'; // Replace with your Supabase URL
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5kbmlvc3JxZ3J6Y3NxbmZhYnhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk1NjEyNTAsImV4cCI6MjA4NTEzNzI1MH0.vu7GRZ-C-qdhPT8niHVOgz3E1Sxhv5hewi-GDSGR01w'; // Replace with your Supabase anon key
 
+// Debug Configuration
+const DEBUG = localStorage.getItem('debug') === 'true';
+
 // Initialize Supabase client
 let supabaseClient = null;
 let currentUser = null;
@@ -2949,6 +2952,10 @@ async function openTicketChat(ticketId) {
         // Subscribe to real-time updates for this ticket
         subscribeToTicketMessages(ticketId);
 
+        // Mark messages as read immediately when opening chat for all users
+        // Don't pass timestamp - always query for the absolute latest to avoid missing messages
+        await markMessagesAsRead(ticketId, currentUser.id);
+
         // Show modal
         openModal('chat-modal');
 
@@ -3014,11 +3021,6 @@ async function displayChatMessages(messages) {
 
         messagesContainer.appendChild(messageElement);
     });
-
-    // For clients, mark messages as read immediately when opening chat
-    if (currentUserRole === 'client') {
-        await markMessagesAsRead(currentTicketId, currentUser.id);
-    }
 
     // Scroll to bottom with smooth animation
     setTimeout(() => {
@@ -3240,35 +3242,64 @@ function initializeReadTracking(ticketId) {
     // Add scroll event listener
     messagesContainer.addEventListener('scroll', markAsRead);
 
-    // Also check immediately in case user opens chat and it's already at bottom
-    setTimeout(markAsRead, 200); // Increased timeout to ensure rendering is complete
+    // DO NOT auto-trigger markAsRead here - it's already called explicitly in openTicketChat
+    // This prevents race conditions where two markMessagesAsRead calls overwrite each other
 
     // Store the event listener so we can remove it later
     messagesContainer._markAsReadListener = markAsRead;
 }
 
 // Mark messages as read for a user and ticket
-async function markMessagesAsRead(ticketId, userId) {
+let markingAsReadLock = {};
+
+async function markMessagesAsRead(ticketId, userId, providedTimestamp = null) {
+    // Prevent concurrent calls for the same ticket to avoid race conditions
+    const lockKey = `${ticketId}-${userId}`;
+    if (markingAsReadLock[lockKey]) {
+        console.log('⏳ Skipping markMessagesAsRead - already in progress for ticket:', ticketId);
+        return;
+    }
+    
+    markingAsReadLock[lockKey] = true;
+    
     try {
-        console.log('📖 Marking messages as read for ticket:', ticketId, 'user:', userId);
+        console.log('📖 Marking messages as read for ticket:', ticketId, 'user:', userId, 'providedTimestamp:', providedTimestamp);
 
-        // Get the latest message timestamp from this ticket
-        const { data: latestMessage, error: messageError } = await supabaseClient
-            .from('messages')
-            .select('created_at')
-            .eq('ticket_id', ticketId)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
+        let lastReadTimestamp;
+        
+        if (providedTimestamp) {
+            // Use the provided timestamp (from already-loaded messages)
+            lastReadTimestamp = providedTimestamp;
+            console.log('📖 Using provided timestamp:', lastReadTimestamp);
+        } else {
+            // Get the latest message timestamp from this ticket
+            const { data: latestMessage, error: messageError } = await supabaseClient
+                .from('messages')
+                .select('created_at, id, content')
+                .eq('ticket_id', ticketId)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
 
-        if (messageError) {
-            console.error('Error fetching latest message:', messageError);
-            return;
+            if (messageError) {
+                console.error('Error fetching latest message:', messageError);
+                return;
+            }
+
+            if (latestMessage) {
+                console.log('📖 Latest message in database:', {
+                    id: latestMessage.id,
+                    created_at: latestMessage.created_at,
+                    preview: latestMessage.content?.substring(0, 50)
+                });
+            }
+
+            // Use the latest message timestamp, or current time if no messages exist
+            lastReadTimestamp = latestMessage?.created_at || new Date().toISOString();
+            console.log('📖 Queried and got latest message time:', lastReadTimestamp);
         }
 
-        // Use the latest message timestamp, or current time if no messages exist
-        const lastReadTimestamp = latestMessage?.created_at || new Date().toISOString();
-        console.log('📖 Setting last_read_at to latest message time:', lastReadTimestamp);
+        console.log('📖 Setting last_read_at to:', lastReadTimestamp);
 
         const { error } = await supabaseClient
             .from('ticket_reads')
@@ -3288,19 +3319,65 @@ async function markMessagesAsRead(ticketId, userId) {
         console.log('✅ Messages marked as read successfully');
 
         // Update the unread count in the ticket list (if visible)
-        await updateTicketUnreadIndicator(ticketId);
+        // Pass 0 as the count since we just marked everything as read
+        await updateTicketUnreadIndicator(ticketId, 0);
     } catch (error) {
         console.error('Error in markMessagesAsRead:', error);
+    } finally {
+        // Release the lock
+        delete markingAsReadLock[lockKey];
+    }
+}
+
+// Remove unread indicator for a specific ticket in the DOM
+function removeUnreadIndicator(ticketId) {
+    try {
+        console.log('🗑️ Removing unread indicator for ticket:', ticketId);
+
+        // Find the ticket row in the DOM
+        const ticketRow = document.querySelector(`[data-ticket-id="${ticketId}"]`);
+        if (!ticketRow) {
+            console.log('⚠️ Ticket row not found in DOM for ticket:', ticketId);
+            return;
+        }
+
+        // Find the title cell and its flex container
+        const titleCell = ticketRow.querySelector('[data-title-cell]');
+        if (!titleCell) {
+            console.log('⚠️ Title cell not found for ticket:', ticketId);
+            return;
+        }
+
+        // Find the flex container inside the title cell
+        const flexContainer = titleCell.querySelector('.flex.items-center');
+        if (!flexContainer) {
+            console.log('⚠️ Flex container not found for ticket:', ticketId);
+            return;
+        }
+
+        // Find existing unread indicator
+        const existingIndicator = flexContainer.querySelector('.ml-2.flex.items-center');
+
+        // Remove unread indicator if it exists
+        if (existingIndicator) {
+            existingIndicator.remove();
+            console.log('✅ Removed unread indicator for ticket:', ticketId);
+        } else {
+            console.log('ℹ️ No unread indicator found for ticket:', ticketId);
+        }
+    } catch (error) {
+        console.error('❌ Error removing ticket unread indicator:', error);
     }
 }
 
 // Update unread indicator for a specific ticket in the DOM
-async function updateTicketUnreadIndicator(ticketId) {
+async function updateTicketUnreadIndicator(ticketId, knownUnreadCount = null) {
     try {
         console.log('🔄 Updating unread indicator for ticket:', ticketId);
 
         // Get the current unread count for this ticket
-        const unreadCount = await getUnreadMessageCount(ticketId, currentUser.id);
+        // If knownUnreadCount is provided, use it (avoids race condition)
+        const unreadCount = knownUnreadCount !== null ? knownUnreadCount : await getUnreadMessageCount(ticketId, currentUser.id);
         console.log('🔄 Unread count for indicator update:', unreadCount);
 
         // Find the ticket row in the DOM
@@ -3346,9 +3423,7 @@ async function updateTicketUnreadIndicator(ticketId) {
         } else {
             console.log('🗑️ Removing unread indicator for ticket:', ticketId);
             // Remove unread indicator if it exists
-            if (existingIndicator) {
-                existingIndicator.remove();
-            }
+            removeUnreadIndicator(ticketId);
         }
 
         console.log('✅ Updated unread indicator for ticket:', ticketId, 'count:', unreadCount);
@@ -3360,10 +3435,12 @@ async function updateTicketUnreadIndicator(ticketId) {
 // Get unread message count for a ticket and user
 async function getUnreadMessageCount(ticketId, userId) {
     try {
-        console.log('📊 Getting unread message count for ticket:', ticketId, 'user:', userId);
+        if (DEBUG) {
+            console.log('📊 Getting unread message count for ticket:', ticketId, 'user:', userId);
+        }
 
         // First, try to get the last read timestamp
-        let lastReadTime = null;
+        let lastReadTimeString = null;
         const { data: readData, error: readError } = await supabaseClient
             .from('ticket_reads')
             .select('last_read_at')
@@ -3375,7 +3452,7 @@ async function getUnreadMessageCount(ticketId, userId) {
             // Check if this is a "no record found" error (normal case)
             if (readError.code === 'PGRST116') {
                 // No read timestamp exists - all messages are unread
-                lastReadTime = null;
+                lastReadTimeString = null;
                 console.log('📖 No read timestamp found for ticket:', ticketId, 'user:', userId);
             } else {
                 // Actual database error - log and rethrow
@@ -3383,8 +3460,9 @@ async function getUnreadMessageCount(ticketId, userId) {
                 throw new Error(`Failed to access read timestamps: ${readError.message}`);
             }
         } else if (readData) {
-            lastReadTime = new Date(readData.last_read_at);
-            console.log('📖 Found read timestamp:', lastReadTime, 'for ticket:', ticketId, 'user:', userId);
+            // Keep as string to preserve full precision (microseconds)
+            lastReadTimeString = readData.last_read_at;
+            console.log('📖 Found read timestamp (raw string):', lastReadTimeString, 'for ticket:', ticketId, 'user:', userId);
         }
 
         // Get all messages for debugging
@@ -3394,32 +3472,40 @@ async function getUnreadMessageCount(ticketId, userId) {
             .eq('ticket_id', ticketId)
             .order('created_at', { ascending: false });
 
-        if (!allMsgError) {
-            console.log('📨 All messages in ticket:', allMessages);
-            console.log('📨 Messages from other users:', allMessages.filter(m => m.sender_id !== userId));
-            if (lastReadTime) {
-                console.log('📨 Messages after last read:', allMessages.filter(m => new Date(m.created_at) > lastReadTime));
-                console.log('📨 Unread messages from others:', allMessages.filter(m => m.sender_id !== userId && new Date(m.created_at) > lastReadTime));
+        if (DEBUG) {
+            if (!allMsgError && allMessages) {
+                console.log('📨 All messages in ticket:', allMessages.length, 'messages');
+                console.log('📨 Messages from other users:', allMessages.filter(m => m.sender_id !== userId).length);
+                if (lastReadTimeString) {
+                    const unreadFromOthers = allMessages.filter(m => m.sender_id !== userId && m.created_at > lastReadTimeString);
+                    console.log('📨 Unread messages from others (string comparison):', unreadFromOthers.length);
+                    if (unreadFromOthers.length > 0) {
+                        console.log('📨 First unread message timestamp:', unreadFromOthers[unreadFromOthers.length - 1].created_at);
+                    }
+                }
             }
         }
 
         // Get message count
         let unread_count = 0;
-        if (lastReadTime) {
+        if (lastReadTimeString) {
             // Count messages created after the last read time (excluding user's own messages)
+            // Use the raw string to preserve full timestamp precision
             const { count, error: msgError } = await supabaseClient
                 .from('messages')
                 .select('*', { count: 'exact', head: true })
                 .eq('ticket_id', ticketId)
                 .neq('sender_id', userId)
-                .gt('created_at', lastReadTime.toISOString());
+                .gt('created_at', lastReadTimeString);
 
             if (msgError) {
                 console.error('Error counting unread messages:', msgError);
                 return 0;
             }
             unread_count = count || 0;
-            console.log('📊 Count (with lastReadTime):', unread_count);
+            if (DEBUG) {
+                console.log('📊 Count (with lastReadTimeString):', unread_count, 'using timestamp:', lastReadTimeString);
+            }
         } else {
             // No read timestamp exists, all messages are unread (excluding user's own messages)
             const { count, error: msgError } = await supabaseClient
@@ -3433,10 +3519,14 @@ async function getUnreadMessageCount(ticketId, userId) {
                 return 0;
             }
             unread_count = count || 0;
-            console.log('📊 Count (no lastReadTime):', unread_count);
+            if (DEBUG) {
+                console.log('📊 Count (no lastReadTime):', unread_count);
+            }
         }
 
-        console.log('📊 Final unread message count:', unread_count);
+        if (DEBUG) {
+            console.log('📊 Final unread message count:', unread_count);
+        }
         return unread_count;
     } catch (error) {
         console.error('Error in getUnreadMessageCount:', error);
@@ -3693,6 +3783,20 @@ function subscribeToTicketUpdates() {
 
             if (shouldReload) {
                 console.log('🎫 Ticket update affects current user, reloading tickets...');
+                
+                // Special handling for clients when their ticket gets assigned
+                if (currentUserRole === 'client' && payload.eventType === 'UPDATE') {
+                    const oldTicket = payload.old;
+                    const newTicket = payload.new;
+                    
+                    // Check if the ticket was just assigned (from unassigned to assigned)
+                    if ((!oldTicket.assigned_to || oldTicket.assigned_to_name === null) && 
+                        newTicket.assigned_to && newTicket.assigned_to_name) {
+                        console.log('🎫 Client ticket just got assigned:', newTicket.id, 'to', newTicket.assigned_to_name);
+                        showNotification(`Votre ticket "${newTicket.title}" a été assigné à ${newTicket.assigned_to_name}`, 'success');
+                    }
+                }
+                
                 loadTickets();
             }
         })
@@ -4294,7 +4398,7 @@ async function loadUsersList() {
             console.log('👥 No users found, showing empty state');
             usersTableBody.innerHTML = `
                 <tr>
-                    <td colspan="7" class="px-6 py-12 text-center text-slate-500">
+                    <td colspan="7" class="px-6 py-12 text-center text-slate-500 dark:text-slate-400">
                         <div class="text-4xl mb-4">👥</div>
                         <p>Aucun utilisateur trouvé</p>
                         <p class="text-sm">La base de données ne contient aucun utilisateur.</p>
@@ -4322,7 +4426,7 @@ async function loadUsersList() {
         if (usersTableBody) {
             usersTableBody.innerHTML = `
                 <tr>
-                    <td colspan="7" class="px-6 py-12 text-center text-red-500">
+                    <td colspan="7" class="px-6 py-12 text-center text-red-500 dark:text-red-400">
                         <div class="text-4xl mb-4">❌</div>
                         <p>Erreur de chargement</p>
                         <p class="text-sm">${error.message}</p>
@@ -4514,16 +4618,16 @@ function createUserTableRow(user) {
                     ${avatarHtml}
                 </div>
                 <div class="ml-4">
-                    <div class="text-sm font-medium text-slate-900">${user.name || 'Utilisateur'}</div>
-                    <div class="text-sm text-slate-600 font-medium">${discordUsername ? '@' + discordUsername : '<span class="text-slate-400 italic">Aucun Discord</span>'}</div>
+                    <div class="text-sm font-medium text-slate-900 dark:text-white">${user.name || 'Utilisateur'}</div>
+                    <div class="text-sm text-slate-600 dark:text-slate-300 font-medium">${discordUsername ? '@' + discordUsername : '<span class="text-slate-400 italic">Aucun Discord</span>'}</div>
                 </div>
             </div>
         </td>
         <td class="px-6 py-4 whitespace-nowrap">
-            <div class="text-sm text-slate-900">${user.email}</div>
+            <div class="text-sm text-slate-900 dark:text-white">${user.email}</div>
         </td>
         <td class="px-6 py-4 whitespace-nowrap">
-            <select onchange="updateUserRole('${user.id}', this.value)" class="px-3 py-1 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" ${isDeactivated ? 'disabled' : ''}>
+            <select onchange="updateUserRole('${user.id}', this.value)" class="px-3 py-1 border border-slate-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500" ${isDeactivated ? 'disabled' : ''}>
                 <option value="client" ${user.role === 'client' ? 'selected' : ''}>Client</option>
                 <option value="moderator" ${user.role === 'moderator' ? 'selected' : ''}>Modérateur</option>
                 <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Admin</option>
@@ -4532,10 +4636,10 @@ function createUserTableRow(user) {
         <td class="px-6 py-4 whitespace-nowrap">
             <div class="flex items-center">
                 <div class="status-indicator ${statusClass} mr-2"></div>
-                <span class="text-sm text-slate-900">${statusDisplay}</span>
+                <span class="text-sm text-slate-900 dark:text-white">${statusDisplay}</span>
             </div>
         </td>
-        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">
             ${lastActivity}
         </td>
         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
@@ -4894,6 +4998,7 @@ function initializeAvailabilityToggle() {
                             .from('tickets')
                             .update({
                                 assigned_to: currentUser.id,
+                                assigned_to_name: currentUser.firstName || currentUser.username || 'Modérateur',
                                 status: 'in-progress',
                                 updated_at: new Date().toISOString()
                             })
@@ -4907,6 +5012,22 @@ function initializeAvailabilityToggle() {
                             // Assignment was successful - ticket was still unassigned
                             console.log('✅ Ticket', unassignedTicket.id, 'auto-assigned to moderator', currentUser.id);
                             showNotification(`Ticket "${unassignedTicket.title}" vous a été automatiquement assigné`, 'success');
+
+                            // Notify the client that their ticket has been assigned
+                            try {
+                                // Send a message to the ticket to notify the client
+                                await supabaseClient
+                                    .from('messages')
+                                    .insert([{
+                                        ticket_id: unassignedTicket.id,
+                                        content: `Votre ticket "${unassignedTicket.title}" a été assigné à un modérateur. Vous recevrez bientôt une réponse.`,
+                                        sender_type: 'system',
+                                        sender_name: 'Système',
+                                        sender_id: 'system'
+                                    }]);
+                            } catch (notifyError) {
+                                console.log('⚠️ Could not send assignment notification to client:', notifyError);
+                            }
 
                             // Refresh the tickets list to show the assignment
                             loadTickets();
