@@ -6,7 +6,7 @@
 -- Database Tables
 
 -- 1. users
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     clerk_id TEXT UNIQUE NOT NULL,
     email TEXT,
@@ -23,21 +23,10 @@ CREATE TABLE users (
 -- Enable RLS
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 
--- Policies
-CREATE POLICY "Users can view their own data" ON users
-    FOR SELECT USING (auth.jwt() ->> 'sub' = clerk_id AND active = true);
-
-CREATE POLICY "Users can update their own data" ON users
-    FOR UPDATE USING (auth.jwt() ->> 'sub' = clerk_id AND active = true);
-
-CREATE POLICY "Admins can view all users" ON users
-    FOR SELECT USING (is_admin(auth.jwt() ->> 'sub'));
-
-CREATE POLICY "Admins can update all users" ON users
-    FOR UPDATE USING (is_admin(auth.jwt() ->> 'sub'));
+-- Policies are defined in the migration section below
 
 -- 2. tickets
-CREATE TABLE tickets (
+CREATE TABLE IF NOT EXISTS tickets (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     title TEXT NOT NULL,
     description TEXT NOT NULL,
@@ -55,6 +44,11 @@ CREATE TABLE tickets (
 ALTER TABLE tickets ENABLE ROW LEVEL SECURITY;
 
 -- Policies
+DROP POLICY IF EXISTS "Clients can view their own tickets" ON tickets;
+DROP POLICY IF EXISTS "Clients can create tickets" ON tickets;
+DROP POLICY IF EXISTS "Moderators can view assigned and open tickets" ON tickets;
+DROP POLICY IF EXISTS "Moderators can update tickets" ON tickets;
+
 CREATE POLICY "Clients can view their own tickets" ON tickets
     FOR SELECT USING (client_id = auth.jwt() ->> 'sub' AND EXISTS (SELECT 1 FROM users WHERE clerk_id = auth.jwt() ->> 'sub' AND active = true));
 
@@ -74,7 +68,7 @@ CREATE POLICY "Moderators can update tickets" ON tickets
     FOR UPDATE USING (is_staff(auth.jwt() ->> 'sub'));
 
 -- 3. messages
-CREATE TABLE messages (
+CREATE TABLE IF NOT EXISTS messages (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
     content TEXT NOT NULL,
@@ -89,6 +83,9 @@ CREATE TABLE messages (
 ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
 
 -- Policies
+DROP POLICY IF EXISTS "Users can view messages for their tickets" ON messages;
+DROP POLICY IF EXISTS "Users can insert messages for their tickets" ON messages;
+
 CREATE POLICY "Users can view messages for their tickets" ON messages
     FOR SELECT USING (
         EXISTS (
@@ -116,7 +113,7 @@ CREATE POLICY "Users can insert messages for their tickets" ON messages
     );
 
 -- 4. internal_notes (for moderators/admins)
-CREATE TABLE internal_notes (
+CREATE TABLE IF NOT EXISTS internal_notes (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
     content TEXT NOT NULL,
@@ -129,11 +126,56 @@ CREATE TABLE internal_notes (
 ALTER TABLE internal_notes ENABLE ROW LEVEL SECURITY;
 
 -- Policies (only moderators and admins)
+DROP POLICY IF EXISTS "Staff can view internal notes" ON internal_notes;
+DROP POLICY IF EXISTS "Staff can create internal notes" ON internal_notes;
+
 CREATE POLICY "Staff can view internal notes" ON internal_notes
     FOR SELECT USING (is_staff(auth.jwt() ->> 'sub'));
 
 CREATE POLICY "Staff can create internal notes" ON internal_notes
     FOR INSERT WITH CHECK (is_staff(auth.jwt() ->> 'sub'));
+
+-- 5. ticket_reads (for unread message tracking)
+CREATE TABLE IF NOT EXISTS ticket_reads (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(clerk_id) ON DELETE CASCADE,
+    last_read_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(ticket_id, user_id)
+);
+
+-- Enable RLS
+ALTER TABLE ticket_reads ENABLE ROW LEVEL SECURITY;
+
+-- Policies
+DROP POLICY IF EXISTS "Users can view their own read timestamps" ON ticket_reads;
+DROP POLICY IF EXISTS "Users can insert their own read timestamps" ON ticket_reads;
+DROP POLICY IF EXISTS "Users can update their own read timestamps" ON ticket_reads;
+
+CREATE POLICY "Users can view their own read timestamps" ON ticket_reads
+    FOR SELECT USING (user_id = auth.jwt() ->> 'sub' AND EXISTS (SELECT 1 FROM users WHERE clerk_id = auth.jwt() ->> 'sub' AND active = true));
+
+CREATE POLICY "Users can insert their own read timestamps" ON ticket_reads
+    FOR INSERT WITH CHECK (
+        user_id = auth.jwt() ->> 'sub' AND EXISTS (SELECT 1 FROM users WHERE clerk_id = auth.jwt() ->> 'sub' AND active = true)
+        AND EXISTS (
+            SELECT 1 FROM tickets
+            WHERE tickets.id = ticket_reads.ticket_id
+            AND (
+                tickets.client_id = auth.jwt() ->> 'sub' OR
+                tickets.assigned_to = auth.jwt() ->> 'sub' OR
+                is_staff(auth.jwt() ->> 'sub')
+            )
+        )
+    );
+
+CREATE POLICY "Users can update their own read timestamps" ON ticket_reads
+    FOR UPDATE USING (user_id = auth.jwt() ->> 'sub' AND EXISTS (SELECT 1 FROM users WHERE clerk_id = auth.jwt() ->> 'sub' AND active = true));
+
+-- Add index on user_id for ticket_reads table (ticket_id is already indexed by the UNIQUE constraint)
+CREATE INDEX IF NOT EXISTS idx_ticket_reads_user_id ON ticket_reads(user_id);
 
 -- Database Functions
 
@@ -170,6 +212,37 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- Unread Messages Count Function
+CREATE OR REPLACE FUNCTION get_unread_message_count(p_ticket_id UUID, p_user_id TEXT)
+RETURNS INTEGER AS $$
+DECLARE
+    last_read_time TIMESTAMP WITH TIME ZONE;
+    unread_count INTEGER;
+BEGIN
+    -- Get the last read timestamp for this user and ticket
+    SELECT last_read_at INTO last_read_time
+    FROM ticket_reads
+    WHERE ticket_id = p_ticket_id AND user_id = p_user_id;
+
+    -- If no read timestamp exists, all messages are unread (excluding user's own messages)
+    IF last_read_time IS NULL THEN
+        SELECT COUNT(*) INTO unread_count
+        FROM messages
+        WHERE ticket_id = p_ticket_id
+        AND sender_id != p_user_id;
+    ELSE
+        -- Count messages created after the last read time (excluding user's own messages)
+        SELECT COUNT(*) INTO unread_count
+        FROM messages
+        WHERE ticket_id = p_ticket_id
+        AND created_at > last_read_time
+        AND sender_id != p_user_id;
+    END IF;
+
+    RETURN unread_count;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 -- Role checking functions to avoid RLS recursion
 CREATE OR REPLACE FUNCTION is_admin(user_clerk_id TEXT) RETURNS BOOLEAN AS $$
 BEGIN
@@ -185,30 +258,67 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Real-time Subscriptions
 
--- Enable real-time for tables
--- Enable real-time for all tables
-ALTER PUBLICATION supabase_realtime ADD TABLE users;
-ALTER PUBLICATION supabase_realtime ADD TABLE tickets;
-ALTER PUBLICATION supabase_realtime ADD TABLE messages;
-ALTER PUBLICATION supabase_realtime ADD TABLE internal_notes;
+-- Enable real-time for tables (ignore errors if already added)
+DO $$
+BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE users;
+EXCEPTION WHEN duplicate_object THEN
+    -- Table might already be in publication, ignore error
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE tickets;
+EXCEPTION WHEN OTHERS THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE messages;
+EXCEPTION WHEN OTHERS THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE internal_notes;
+EXCEPTION WHEN OTHERS THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE ticket_reads;
+EXCEPTION WHEN OTHERS THEN
+    NULL;
+END $$;
 
 -- Setup Instructions
 
 -- 1. Create a new Supabase project
--- 2. Run the SQL schema in the Supabase SQL editor
--- 3. Update the configuration in script.js:
+-- 2. Set up Clerk as a third-party auth provider:
+--    - Go to https://dashboard.clerk.com/setup/supabase
+--    - Select your Clerk application and activate the Supabase integration
+--    - Copy the Clerk domain (e.g., your-app.clerk.accounts.dev)
+--    - Go to https://supabase.com/dashboard → Your Project → Authentication → Sign In / Up
+--    - Click "Add provider" → Select "Clerk" → Paste the Clerk domain
+-- 3. Run the SQL schema in the Supabase SQL editor
+-- 4. Update the configuration in script.js:
 --    const SUPABASE_URL = 'https://your-project.supabase.co';
 --    const SUPABASE_ANON_KEY = 'your-anon-key';
--- 4. Install Supabase client in your HTML:
+-- 5. Install Supabase client in your HTML:
 --    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 -- Initial Admin Setup
 
--- After setting up the database, create your first admin user:
+-- After setting up the database, create your first admin user (only if it doesn't exist):
 
 -- Replace with your Clerk user ID
 INSERT INTO users (clerk_id, email, name, role)
-VALUES ('your-clerk-user-id', 'admin@example.com', 'Admin User', 'admin');
+SELECT 'your-clerk-user-id', 'admin@example.com', 'Admin User', 'admin'
+WHERE NOT EXISTS (SELECT 1 FROM users WHERE clerk_id = 'your-clerk-user-id');
 
 -- Testing the System
 
@@ -229,18 +339,26 @@ VALUES ('your-clerk-user-id', 'admin@example.com', 'Admin User', 'admin');
 -- Performance Considerations
 
 -- Add indexes on frequently queried columns:
-CREATE INDEX idx_tickets_client_id ON tickets(client_id);
-CREATE INDEX idx_tickets_assigned_to ON tickets(assigned_to);
-CREATE INDEX idx_tickets_status ON tickets(status);
-CREATE INDEX idx_messages_ticket_id ON messages(ticket_id);
-CREATE INDEX idx_users_clerk_id ON users(clerk_id);
+CREATE INDEX IF NOT EXISTS idx_tickets_client_id ON tickets(client_id);
+CREATE INDEX IF NOT EXISTS idx_tickets_assigned_to ON tickets(assigned_to);
+CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status);
+CREATE INDEX IF NOT EXISTS idx_messages_ticket_id ON messages(ticket_id);
+CREATE INDEX IF NOT EXISTS idx_users_clerk_id ON users(clerk_id);
+
+-- Composite index for get_unread_message_count function performance
+CREATE INDEX IF NOT EXISTS idx_messages_ticket_created_sender ON messages(ticket_id, created_at, sender_id);
 
 -- Consider partitioning the messages table if you expect high volume
 
 -- Database Migrations
 
--- Add active field to existing users table
-ALTER TABLE users ADD COLUMN active BOOLEAN DEFAULT true;
+-- Add active field to existing users table (only if it doesn't exist)
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'active') THEN
+        ALTER TABLE users ADD COLUMN active BOOLEAN DEFAULT true;
+    END IF;
+END $$;
 
 -- Update existing policies to include active checks
 -- Note: You'll need to drop and recreate policies, or use ALTER POLICY if supported

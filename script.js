@@ -1927,14 +1927,6 @@ async function initializeTicketingSystem() {
     try {
         console.log('🚀 Initializing ticketing system...');
 
-        // Initialize Supabase client only once
-        if (!supabaseClient) {
-            supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-            console.log('✅ Supabase client initialized');
-        } else {
-            console.log('✅ Supabase client already initialized');
-        }
-
         // Check if user is authenticated with Clerk
         if (!window.Clerk || !window.Clerk.user || !window.Clerk.user.id) {
             console.log('❌ User not authenticated');
@@ -1943,6 +1935,34 @@ async function initializeTicketingSystem() {
 
         currentUser = window.Clerk.user;
         console.log('✅ User authenticated:', currentUser);
+
+        // Initialize Supabase client with dynamic JWT token retrieval
+        if (!supabaseClient) {
+            supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+                accessToken: async () => {
+                    try {
+                        // Get fresh JWT token from Clerk for each request
+                        if (window.Clerk.session) {
+                            const token = await window.Clerk.session.getToken();
+                            console.log('🔑 Fresh JWT token retrieved from Clerk session');
+                            return token;
+                        } else {
+                            // Fallback: try to get token directly from Clerk
+                            const token = await window.Clerk.getToken();
+                            console.log('🔑 Fresh JWT token retrieved via fallback method');
+                            return token;
+                        }
+                    } catch (tokenError) {
+                        console.error('❌ Error getting fresh JWT token from Clerk:', tokenError);
+                        // Re-throw the error to surface authentication failures immediately
+                        throw new Error(`Authentication failed: ${tokenError.message || 'Unable to retrieve JWT token'}`);
+                    }
+                }
+            });
+            console.log('✅ Supabase client initialized with dynamic JWT token retrieval');
+        } else {
+            console.log('✅ Supabase client already initialized');
+        }
 
         await loadUserRole();
         console.log('✅ User role loaded:', currentUserRole);
@@ -1968,18 +1988,6 @@ async function initializeTicketingSystem() {
     } catch (error) {
         console.error('❌ Error initializing ticketing system:', error);
         showNotification('Erreur lors de l\'initialisation du système', 'error');
-    }
-}
-
-// Set user context for RLS policies (simplified)
-async function setUserContext(clerkId) {
-    // This is now optional - our RLS policies work with the current setup
-    try {
-        await supabaseClient.rpc('set_user_context', {
-            user_clerk_id: clerkId
-        });
-    } catch (error) {
-        // Ignore errors - RLS still works without this
     }
 }
 
@@ -2375,6 +2383,17 @@ async function loadTickets() {
                     console.log('🎫 Client ticket:', ticket.id, ticket.title, 'client_id:', ticket.client_id);
                 });
             }
+
+            // Calculate unread counts for client tickets
+            if (tickets) {
+                const unreadResults = await Promise.allSettled(
+                    tickets.map(ticket => getUnreadMessageCount(ticket.id, currentUser.id))
+                );
+                tickets.forEach((ticket, index) => {
+                    ticket.unreadCount = unreadResults[index].status === 'fulfilled' ? unreadResults[index].value : 0;
+                    console.log(`🔔 Client ticket ${ticket.id} unread count:`, ticket.unreadCount);
+                });
+            }
         } else if (currentUserRole === 'moderator') {
             // Moderators should see: tickets assigned to them OR open tickets (unassigned)
             console.log('🎫 Filtering for moderator:', currentUser.id);
@@ -2433,6 +2452,17 @@ async function loadTickets() {
 
             tickets = uniqueTickets;
             error = null;
+
+            // Calculate unread counts for moderator tickets
+            if (tickets) {
+                const unreadResults = await Promise.allSettled(
+                    tickets.map(ticket => getUnreadMessageCount(ticket.id, currentUser.id))
+                );
+                tickets.forEach((ticket, index) => {
+                    ticket.unreadCount = unreadResults[index].status === 'fulfilled' ? unreadResults[index].value : 0;
+                    console.log(`🔔 Moderator ticket ${ticket.id} unread count:`, ticket.unreadCount);
+                });
+            }
         } else if (currentUserRole === 'admin') {
             // Admin sees all tickets (with optional filters)
             let query = supabaseClient.from('tickets').select(`
@@ -2466,6 +2496,17 @@ async function loadTickets() {
             error = result.error;
 
             console.log('🎫 Admin loading all tickets');
+
+            // Calculate unread counts for admin tickets
+            if (tickets) {
+                const unreadResults = await Promise.allSettled(
+                    tickets.map(ticket => getUnreadMessageCount(ticket.id, currentUser.id))
+                );
+                tickets.forEach((ticket, index) => {
+                    ticket.unreadCount = unreadResults[index].status === 'fulfilled' ? unreadResults[index].value : 0;
+                    console.log(`🔔 Admin ticket ${ticket.id} unread count:`, ticket.unreadCount);
+                });
+            }
         }
 
         if (error) {
@@ -2535,6 +2576,7 @@ function displayTickets(tickets) {
 function createTicketCard(ticket) {
     const row = document.createElement('tr');
     row.className = 'hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer transition-colors relative';
+    row.setAttribute('data-ticket-id', ticket.id);
     row.onclick = () => openTicketChat(ticket.id);
 
     const statusClass = ticket.status.toLowerCase().replace(' ', '-');
@@ -2557,6 +2599,23 @@ function createTicketCard(ticket) {
 
     // Extract problem type from title (remove "Support: " prefix)
     const problemType = ticket.title.replace(/^Support:\s*/, '');
+
+    // Create unread message indicator
+    let unreadIndicator = '';
+    console.log(`🎨 Creating ticket card for ${ticket.id}, unreadCount:`, ticket.unreadCount);
+    if (ticket.unreadCount > 0) {
+        console.log(`✅ Adding unread indicator for ticket ${ticket.id}:`, ticket.unreadCount, 'messages');
+        unreadIndicator = `
+            <div class="ml-2 flex items-center space-x-1">
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
+                    <span class="w-2 h-2 bg-red-500 rounded-full mr-1"></span>
+                    ${ticket.unreadCount} message${ticket.unreadCount > 1 ? 's' : ''} non lu${ticket.unreadCount > 1 ? 's' : ''}
+                </span>
+            </div>
+        `;
+    } else {
+        console.log(`ℹ️ No unread messages for ticket ${ticket.id}`);
+    }
 
     // Short ticket ID (first 8 characters)
     const shortId = ticket.id.substring(0, 8);
@@ -2630,8 +2689,11 @@ function createTicketCard(ticket) {
 
     row.innerHTML = `
         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900 dark:text-white">#${escapeHtml(shortId)}</td>
-        <td class="px-6 py-4 whitespace-nowrap">
-            <div class="text-sm font-medium text-slate-900 dark:text-white">${escapeHtml(problemType)}</div>
+        <td class="px-6 py-4 whitespace-nowrap" data-title-cell>
+            <div class="flex items-center">
+                <div class="text-sm font-medium text-slate-900 dark:text-white">${escapeHtml(problemType)}</div>
+                ${unreadIndicator}
+            </div>
         </td>
         <td class="px-6 py-4 whitespace-nowrap">
             <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full ${statusColors[ticket.status] || 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200'}">${escapeHtml(ticket.status)}</span>
@@ -2889,6 +2951,9 @@ async function openTicketChat(ticketId) {
 
         // Show modal
         openModal('chat-modal');
+
+        // Mark messages as read when user scrolls to bottom
+        initializeReadTracking(ticketId);
     } catch (error) {
         console.error('Error opening ticket chat:', error);
         showNotification('Erreur lors de l\'ouverture du chat', 'error');
@@ -2896,7 +2961,7 @@ async function openTicketChat(ticketId) {
 }
 
 // Display chat messages
-function displayChatMessages(messages) {
+async function displayChatMessages(messages) {
     const messagesContainer = document.getElementById('chat-messages');
     if (!messagesContainer) return;
 
@@ -2915,15 +2980,88 @@ function displayChatMessages(messages) {
         return;
     }
 
-    messages.forEach(message => {
+    // Get the last read timestamp for highlighting unread messages
+    let lastReadTime = null;
+    try {
+        const { data: readData, error } = await supabaseClient
+            .from('ticket_reads')
+            .select('last_read_at')
+            .eq('ticket_id', currentTicketId)
+            .eq('user_id', currentUser.id)
+            .single();
+
+        if (!error && readData) {
+            lastReadTime = new Date(readData.last_read_at);
+        }
+    } catch (error) {
+        console.log('No read timestamp found in database');
+    }
+
+    let firstUnreadMessage = null;
+
+    messages.forEach((message, index) => {
         const messageElement = createMessageElement(message);
+
+        // Check if this is the first unread message
+        const messageTime = new Date(message.created_at);
+        if (!lastReadTime || messageTime > lastReadTime) {
+            if (!firstUnreadMessage) {
+                firstUnreadMessage = messageElement;
+                // Add highlight class to the first unread message
+                messageElement.classList.add('first-unread-message');
+            }
+        }
+
         messagesContainer.appendChild(messageElement);
     });
+
+    // For clients, mark messages as read immediately when opening chat
+    if (currentUserRole === 'client') {
+        await markMessagesAsRead(currentTicketId, currentUser.id);
+    }
 
     // Scroll to bottom with smooth animation
     setTimeout(() => {
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        
+        // Mark messages as read after scrolling to bottom
+        setTimeout(async () => {
+            const isAtBottom = messagesContainer.scrollTop + messagesContainer.clientHeight >= messagesContainer.scrollHeight - 1;
+            if (isAtBottom) {
+                // For moderators, keep the scroll-based behavior
+                // Clients already marked messages as read when opening the chat
+                if (currentUserRole !== 'client') {
+                    await markMessagesAsRead(currentTicketId, currentUser.id);
+                }
+            }
+        }, 100);
     }, 100);
+}
+
+// Get role configuration for styling and display
+function getRoleConfig(role) {
+    const roleConfigs = {
+        'client': {
+            label: 'Client',
+            badgeClass: 'bg-blue-500',
+            bgColor: 'bg-blue-100',
+            icon: '👤'
+        },
+        'moderator': {
+            label: 'Modérateur',
+            badgeClass: 'bg-orange-500',
+            bgColor: 'bg-orange-100',
+            icon: '🛡️'
+        },
+        'admin': {
+            label: 'Admin',
+            badgeClass: 'bg-red-500',
+            bgColor: 'bg-red-100',
+            icon: '👑'
+        }
+    };
+
+    return roleConfigs[role] || roleConfigs['client']; // Default to client if role not found
 }
 
 // Create message element
@@ -3084,32 +3222,226 @@ function createMessageElement(message) {
     return messageDiv;
 }
 
-// Get role configuration for styling
-function getRoleConfig(role) {
-    const configs = {
-        client: {
-            icon: '👤',
-            label: 'Client',
-            color: '#6366f1',
-            bgColor: 'bg-blue-100',
-            badgeClass: 'bg-blue-500'
-        },
-        moderator: {
-            icon: '🛡️',
-            label: 'Modérateur',
-            color: '#f59e0b',
-            bgColor: 'bg-orange-100',
-            badgeClass: 'bg-orange-500'
-        },
-        admin: {
-            icon: '👑',
-            label: 'Admin',
-            color: '#ef4444',
-            bgColor: 'bg-red-100',
-            badgeClass: 'bg-red-500'
+// Initialize read tracking for a ticket
+function initializeReadTracking(ticketId) {
+    const messagesContainer = document.getElementById('chat-messages');
+    if (!messagesContainer) return;
+
+    // Mark messages as read when user scrolls to bottom
+    const markAsRead = async () => {
+        // More reliable check for being at the bottom
+        const isAtBottom = messagesContainer.scrollTop + messagesContainer.clientHeight >= messagesContainer.scrollHeight - 1;
+
+        if (isAtBottom) {
+            await markMessagesAsRead(ticketId, currentUser.id);
         }
     };
-    return configs[role] || configs.client;
+
+    // Add scroll event listener
+    messagesContainer.addEventListener('scroll', markAsRead);
+
+    // Also check immediately in case user opens chat and it's already at bottom
+    setTimeout(markAsRead, 200); // Increased timeout to ensure rendering is complete
+
+    // Store the event listener so we can remove it later
+    messagesContainer._markAsReadListener = markAsRead;
+}
+
+// Mark messages as read for a user and ticket
+async function markMessagesAsRead(ticketId, userId) {
+    try {
+        console.log('📖 Marking messages as read for ticket:', ticketId, 'user:', userId);
+
+        // Get the latest message timestamp from this ticket
+        const { data: latestMessage, error: messageError } = await supabaseClient
+            .from('messages')
+            .select('created_at')
+            .eq('ticket_id', ticketId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        if (messageError) {
+            console.error('Error fetching latest message:', messageError);
+            return;
+        }
+
+        // Use the latest message timestamp, or current time if no messages exist
+        const lastReadTimestamp = latestMessage?.created_at || new Date().toISOString();
+        console.log('📖 Setting last_read_at to latest message time:', lastReadTimestamp);
+
+        const { error } = await supabaseClient
+            .from('ticket_reads')
+            .upsert({
+                ticket_id: ticketId,
+                user_id: userId,
+                last_read_at: lastReadTimestamp
+            }, {
+                onConflict: 'ticket_id,user_id'
+            });
+
+        if (error) {
+            console.error('Error marking messages as read:', error);
+            return;
+        }
+
+        console.log('✅ Messages marked as read successfully');
+
+        // Update the unread count in the ticket list (if visible)
+        await updateTicketUnreadIndicator(ticketId);
+    } catch (error) {
+        console.error('Error in markMessagesAsRead:', error);
+    }
+}
+
+// Update unread indicator for a specific ticket in the DOM
+async function updateTicketUnreadIndicator(ticketId) {
+    try {
+        console.log('🔄 Updating unread indicator for ticket:', ticketId);
+
+        // Get the current unread count for this ticket
+        const unreadCount = await getUnreadMessageCount(ticketId, currentUser.id);
+        console.log('🔄 Unread count for indicator update:', unreadCount);
+
+        // Find the ticket row in the DOM
+        const ticketRow = document.querySelector(`[data-ticket-id="${ticketId}"]`);
+        if (!ticketRow) {
+            console.log('⚠️ Ticket row not found in DOM for ticket:', ticketId);
+            return;
+        }
+
+        // Find the title cell and its flex container
+        const titleCell = ticketRow.querySelector('[data-title-cell]');
+        if (!titleCell) {
+            console.log('⚠️ Title cell not found for ticket:', ticketId);
+            return;
+        }
+
+        // Find the flex container inside the title cell
+        const flexContainer = titleCell.querySelector('.flex.items-center');
+        if (!flexContainer) {
+            console.log('⚠️ Flex container not found for ticket:', ticketId);
+            return;
+        }
+
+        // Find existing unread indicator
+        const existingIndicator = flexContainer.querySelector('.ml-2.flex.items-center');
+
+        if (unreadCount > 0) {
+            console.log('✅ Creating/updating unread indicator for ticket:', ticketId, 'count:', unreadCount);
+            // Create or update unread indicator
+            let indicatorElement = existingIndicator;
+            if (!indicatorElement) {
+                indicatorElement = document.createElement('div');
+                indicatorElement.className = 'ml-2 flex items-center space-x-1';
+                flexContainer.appendChild(indicatorElement);
+            }
+
+            indicatorElement.innerHTML = `
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
+                    <span class="w-2 h-2 bg-red-500 rounded-full mr-1"></span>
+                    ${unreadCount} message${unreadCount > 1 ? 's' : ''} non lu${unreadCount > 1 ? 's' : ''}
+                </span>
+            `;
+        } else {
+            console.log('🗑️ Removing unread indicator for ticket:', ticketId);
+            // Remove unread indicator if it exists
+            if (existingIndicator) {
+                existingIndicator.remove();
+            }
+        }
+
+        console.log('✅ Updated unread indicator for ticket:', ticketId, 'count:', unreadCount);
+    } catch (error) {
+        console.error('❌ Error updating ticket unread indicator:', error);
+    }
+}
+
+// Get unread message count for a ticket and user
+async function getUnreadMessageCount(ticketId, userId) {
+    try {
+        console.log('📊 Getting unread message count for ticket:', ticketId, 'user:', userId);
+
+        // First, try to get the last read timestamp
+        let lastReadTime = null;
+        const { data: readData, error: readError } = await supabaseClient
+            .from('ticket_reads')
+            .select('last_read_at')
+            .eq('ticket_id', ticketId)
+            .eq('user_id', userId)
+            .single();
+
+        if (readError) {
+            // Check if this is a "no record found" error (normal case)
+            if (readError.code === 'PGRST116') {
+                // No read timestamp exists - all messages are unread
+                lastReadTime = null;
+                console.log('📖 No read timestamp found for ticket:', ticketId, 'user:', userId);
+            } else {
+                // Actual database error - log and rethrow
+                console.error('❌ Database error accessing ticket_reads:', readError);
+                throw new Error(`Failed to access read timestamps: ${readError.message}`);
+            }
+        } else if (readData) {
+            lastReadTime = new Date(readData.last_read_at);
+            console.log('📖 Found read timestamp:', lastReadTime, 'for ticket:', ticketId, 'user:', userId);
+        }
+
+        // Get all messages for debugging
+        const { data: allMessages, error: allMsgError } = await supabaseClient
+            .from('messages')
+            .select('id, sender_id, sender_name, created_at')
+            .eq('ticket_id', ticketId)
+            .order('created_at', { ascending: false });
+
+        if (!allMsgError) {
+            console.log('📨 All messages in ticket:', allMessages);
+            console.log('📨 Messages from other users:', allMessages.filter(m => m.sender_id !== userId));
+            if (lastReadTime) {
+                console.log('📨 Messages after last read:', allMessages.filter(m => new Date(m.created_at) > lastReadTime));
+                console.log('📨 Unread messages from others:', allMessages.filter(m => m.sender_id !== userId && new Date(m.created_at) > lastReadTime));
+            }
+        }
+
+        // Get message count
+        let unread_count = 0;
+        if (lastReadTime) {
+            // Count messages created after the last read time (excluding user's own messages)
+            const { count, error: msgError } = await supabaseClient
+                .from('messages')
+                .select('*', { count: 'exact', head: true })
+                .eq('ticket_id', ticketId)
+                .neq('sender_id', userId)
+                .gt('created_at', lastReadTime.toISOString());
+
+            if (msgError) {
+                console.error('Error counting unread messages:', msgError);
+                return 0;
+            }
+            unread_count = count || 0;
+            console.log('📊 Count (with lastReadTime):', unread_count);
+        } else {
+            // No read timestamp exists, all messages are unread (excluding user's own messages)
+            const { count, error: msgError } = await supabaseClient
+                .from('messages')
+                .select('*', { count: 'exact', head: true })
+                .eq('ticket_id', ticketId)
+                .neq('sender_id', userId);
+
+            if (msgError) {
+                console.error('Error counting total messages:', msgError);
+                return 0;
+            }
+            unread_count = count || 0;
+            console.log('📊 Count (no lastReadTime):', unread_count);
+        }
+
+        console.log('📊 Final unread message count:', unread_count);
+        return unread_count;
+    } catch (error) {
+        console.error('Error in getUnreadMessageCount:', error);
+        return 0;
+    }
 }
 
 // Show typing indicator
@@ -3131,7 +3463,7 @@ function showTypingIndicator() {
         <div class="flex flex-col space-y-1">
             <div class="flex items-center space-x-2">
                 <span class="text-xs font-medium text-gray-600">${roleConfig.label}</span>
-                <span class="px-2 py-0.5 text-xs rounded-full ${roleConfig.badgeClass}">${roleConfig.badge}</span>
+                <span class="px-2 py-0.5 text-xs rounded-full ${roleConfig.badgeClass}">${roleConfig.label}</span>
             </div>
             <div class="flex items-end space-x-2">
                 <div class="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0">
@@ -3217,7 +3549,35 @@ async function sendMessage() {
         messageInput.style.height = 'auto';
         updateCharacterCounter();
 
-        // Messages will be updated via real-time subscription
+        // Immediately add the message to the chat UI for better UX
+        const messageElement = createMessageElement({
+            id: Date.now(), // Temporary ID
+            ticket_id: currentTicketId,
+            content,
+            sender_type: currentUserRole,
+            sender_name: currentUser.firstName || currentUser.username || 'Utilisateur',
+            sender_id: currentUser.id,
+            sender_avatar: senderAvatar,
+            created_at: new Date().toISOString()
+        });
+
+        const messagesContainer = document.getElementById('chat-messages');
+        if (messagesContainer) {
+            // Remove empty state if it exists
+            const emptyState = messagesContainer.querySelector('.empty-state');
+            if (emptyState) {
+                emptyState.remove();
+            }
+
+            messagesContainer.appendChild(messageElement);
+
+            // Scroll to bottom
+            setTimeout(() => {
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }, 100);
+        }
+
+        // Messages will also be updated via real-time subscription (backup)
     } catch (error) {
         console.error('Error sending message:', error);
         showNotification('Erreur lors de l\'envoi du message', 'error');
@@ -3337,91 +3697,30 @@ function subscribeToTicketUpdates() {
             }
         })
         .on('postgres_changes', {
-            event: 'UPDATE',
+            event: 'INSERT',
             schema: 'public',
-            table: 'users',
-            filter: `role=eq.moderator`
+            table: 'messages'
         }, async (payload) => {
-            console.log('👥 Moderator availability changed:', payload.new);
-            
-            // Check if moderator became available
-            if (payload.new.available && !payload.old.available) {
-                console.log('✅ Moderator became available:', payload.new.name);
-                await assignQueuedTickets(payload.new);
+            console.log('💬 Global message notification:', payload.new);
+            console.log('💬 Message sender:', payload.new.sender_id, 'Current user:', currentUser.id);
+
+            // Check if this message is for a ticket the current user has access to
+            const hasAccess = await checkIfUserHasAccessToTicket(payload.new.ticket_id);
+            console.log('💬 User has access to ticket:', hasAccess);
+
+            if (hasAccess && payload.new.sender_id !== currentUser.id) {
+                console.log('✅ Showing notification and updating unread indicator for ticket:', payload.new.ticket_id);
+                // Show notification for new message
+                showMessageNotification(payload.new);
+                playNotificationSound();
+
+                // Update unread counts in ticket list for the specific ticket
+                await updateTicketUnreadIndicator(payload.new.ticket_id);
+            } else {
+                console.log('⏭️ Skipping notification - either no access or own message');
             }
         })
         .subscribe();
-}
-
-// Assign queued tickets to a newly available moderator
-async function assignQueuedTickets(availableModerator) {
-    try {
-        console.log('🔄 Assigning queued tickets to moderator:', availableModerator.name);
-        
-        // Find open tickets that are not assigned
-        const { data: queuedTickets, error } = await supabaseClient
-            .from('tickets')
-            .select('id, title, client_id, client_name')
-            .eq('status', 'open')
-            .is('assigned_to', null)
-            .order('created_at', { ascending: true }); // FIFO - oldest first
-        
-        if (error) {
-            console.error('Error fetching queued tickets:', error);
-            return;
-        }
-        
-        if (!queuedTickets || queuedTickets.length === 0) {
-            console.log('ℹ️ No queued tickets to assign');
-            return;
-        }
-        
-        console.log('📋 Found', queuedTickets.length, 'queued tickets');
-        
-        // Assign tickets to this moderator (limit to prevent overload)
-        const maxTicketsPerModerator = 3; // Configurable limit
-        const ticketsToAssign = queuedTickets.slice(0, maxTicketsPerModerator);
-        
-        for (const ticket of ticketsToAssign) {
-            try {
-                const { data: updateResult, error: assignError } = await supabaseClient
-                    .from('tickets')
-                    .update({
-                        assigned_to: availableModerator.clerk_id,
-                        assigned_to_name: availableModerator.name,
-                        status: 'in-progress'
-                    })
-                    .eq('id', ticket.id)
-                    .is('assigned_to', null)
-                    .select();
-
-                if (assignError) {
-                    console.error('Error assigning ticket', ticket.id, ':', assignError);
-                    continue;
-                }
-
-                // Check if the update actually affected a row (ticket was still unassigned)
-                if (!updateResult || updateResult.length === 0) {
-                    console.log('⚠️ Ticket', ticket.id, 'was already assigned, skipping notification');
-                    continue;
-                }
-
-                console.log('✅ Assigned ticket', ticket.id, 'to moderator', availableModerator.name);
-                
-                // Notify the client that their ticket has been assigned
-                // This would require a notification system, for now we'll just log it
-                console.log('📢 Should notify client', ticket.client_name, 'that ticket', ticket.title, 'is now assigned to', availableModerator.name);
-                
-            } catch (assignError) {
-                console.error('Error assigning individual ticket:', assignError);
-            }
-        }
-        
-        console.log('✅ Assigned', ticketsToAssign.length, 'tickets to moderator', availableModerator.name);
-        
-    } catch (error) {
-        console.error('❌ Error assigning queued tickets:', error);
-    }
 }
 
 // Subscribe to real-time messages for a specific ticket
@@ -3441,20 +3740,46 @@ function subscribeToTicketMessages(ticketId) {
         }, (payload) => {
             console.log('💬 New message received:', payload.new);
 
-            // Add the new message to the chat
-            const messageElement = createMessageElement(payload.new);
-            const messagesContainer = document.getElementById('chat-messages');
-            if (messagesContainer) {
-                messagesContainer.appendChild(messageElement);
+            // Check if this message is from another user (not the current user)
+            const isFromOtherUser = payload.new.sender_id !== currentUser.id;
 
-                // Scroll to bottom
-                setTimeout(() => {
-                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
-                }, 100);
+            // Only add the message to UI if it's from another user
+            // (current user's messages are added immediately when sent)
+            if (isFromOtherUser) {
+                const messageElement = createMessageElement(payload.new);
+                const messagesContainer = document.getElementById('chat-messages');
+                if (messagesContainer) {
+                    messagesContainer.appendChild(messageElement);
+
+                    // Scroll to bottom and check if user is at bottom to mark messages as read
+                    requestAnimationFrame(async () => {
+                        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                        
+                        // Wait for browser to settle and recompute isAtBottom
+                        await new Promise(resolve => setTimeout(resolve, 0));
+                        const isAtBottom = messagesContainer.scrollTop + messagesContainer.clientHeight >= messagesContainer.scrollHeight - 1;
+                        
+                        if (isAtBottom && !window.isMarkingRead) {
+                            window.isMarkingRead = true;
+                            console.log('📖 User is at bottom after new message, marking messages as read');
+                            try {
+                                await markMessagesAsRead(ticketId, currentUser.id);
+                            } finally {
+                                window.isMarkingRead = false;
+                            }
+                        }
+                    });
+                }
             }
 
             // Hide typing indicator if it was showing
             hideTypingIndicator();
+
+            // Show notification and play sound for new messages from other users
+            if (isFromOtherUser) {
+                showMessageNotification(payload.new);
+                playNotificationSound();
+            }
         })
         .subscribe();
 }
@@ -3497,6 +3822,47 @@ function checkIfTicketAffectsCurrentUser(payload) {
     }
 
     return false;
+}
+
+// Check if user has access to a ticket for message notifications
+async function checkIfUserHasAccessToTicket(ticketId) {
+    if (!currentUser || !ticketId) return false;
+
+    try {
+        let hasAccess = false;
+
+        if (currentUserRole === 'client') {
+            // Clients only have access to their own tickets
+            const { data: ticket, error } = await supabaseClient
+                .from('tickets')
+                .select('client_id')
+                .eq('id', ticketId)
+                .single();
+
+            if (!error && ticket) {
+                hasAccess = ticket.client_id === currentUser.id;
+            }
+        } else if (currentUserRole === 'moderator') {
+            // Moderators have access to tickets assigned to them or open tickets
+            const { data: ticket, error } = await supabaseClient
+                .from('tickets')
+                .select('assigned_to, status')
+                .eq('id', ticketId)
+                .single();
+
+            if (!error && ticket) {
+                hasAccess = ticket.assigned_to === currentUser.id || ticket.status === 'open';
+            }
+        } else if (currentUserRole === 'admin') {
+            // Admins have access to all tickets
+            hasAccess = true;
+        }
+
+        return hasAccess;
+    } catch (error) {
+        console.error('Error checking ticket access:', error);
+        return false;
+    }
 }
 
 // Initialize filter controls
@@ -4504,6 +4870,58 @@ function initializeAvailabilityToggle() {
             console.log('✅ Availability updated in database');
             showNotification(available ? 'Vous êtes maintenant disponible' : 'Vous êtes maintenant indisponible', 'info');
 
+            // If moderator just became available, auto-assign an unassigned ticket
+            if (available && currentUserRole === 'moderator') {
+                console.log('🔄 Moderator became available, checking for unassigned tickets...');
+                try {
+                    // Find the oldest unassigned ticket
+                    const { data: unassignedTicket, error: ticketError } = await supabaseClient
+                        .from('tickets')
+                        .select('id, title, client_id')
+                        .eq('status', 'open')
+                        .is('assigned_to', null)
+                        .order('created_at', { ascending: true })
+                        .limit(1)
+                        .single();
+
+                    if (ticketError && ticketError.code !== 'PGRST116') { // PGRST116 is "no rows returned"
+                        console.error('Error finding unassigned ticket:', ticketError);
+                    } else if (unassignedTicket) {
+                        console.log('🎫 Found unassigned ticket:', unassignedTicket.id, 'assigning to moderator:', currentUser.id);
+
+                        // Assign the ticket to this moderator (only if still unassigned)
+                        const { data: assignResult, error: assignError } = await supabaseClient
+                            .from('tickets')
+                            .update({
+                                assigned_to: currentUser.id,
+                                status: 'in-progress',
+                                updated_at: new Date().toISOString()
+                            })
+                            .eq('id', unassignedTicket.id)
+                            .is('assigned_to', null)
+                            .select();
+
+                        if (assignError) {
+                            console.error('Error assigning ticket:', assignError);
+                        } else if (assignResult && assignResult.length > 0) {
+                            // Assignment was successful - ticket was still unassigned
+                            console.log('✅ Ticket', unassignedTicket.id, 'auto-assigned to moderator', currentUser.id);
+                            showNotification(`Ticket "${unassignedTicket.title}" vous a été automatiquement assigné`, 'success');
+
+                            // Refresh the tickets list to show the assignment
+                            loadTickets();
+                        } else {
+                            // No rows were updated - ticket was already assigned to another moderator
+                            console.log('⚠️ Ticket', unassignedTicket.id, 'was already assigned to another moderator (race condition avoided)');
+                        }
+                    } else {
+                        console.log('ℹ️ No unassigned tickets found');
+                    }
+                } catch (error) {
+                    console.error('Error in auto-assignment:', error);
+                }
+            }
+
             // If this is an admin viewing, refresh the stats
             if (currentUserRole === 'admin') {
                 loadAdminStats();
@@ -4604,15 +5022,7 @@ function initializeModalHandlers() {
     });
 
     // Handle message form - only add listeners once
-    const messageForm = document.getElementById('messageForm');
-    if (messageForm && !messageForm.hasAttribute('data-listener-attached')) {
-        messageForm.addEventListener('submit', function(e) {
-            e.preventDefault();
-            sendMessage();
-        });
-        messageForm.setAttribute('data-listener-attached', 'true');
-    }
-
+    // Note: No form element exists in HTML, message sending is handled by button click and Enter key
     const messageInput = document.getElementById('messageInput');
     if (messageInput && !messageInput.hasAttribute('data-listener-attached')) {
         // Character counter
@@ -4709,6 +5119,15 @@ function closeModal(modalId) {
             supabaseClient.removeChannel(chatChannel);
             chatChannel = null;
             currentTicketId = null;
+        }
+
+        // Clean up scroll event listener for read tracking when closing chat modal
+        if (modalId === 'chat-modal') {
+            const messagesContainer = document.getElementById('chat-messages');
+            if (messagesContainer && messagesContainer._markAsReadListener) {
+                messagesContainer.removeEventListener('scroll', messagesContainer._markAsReadListener);
+                delete messagesContainer._markAsReadListener;
+            }
         }
     }
 }
@@ -4963,10 +5382,10 @@ async function refreshAllUsersDiscordInfo(users) {
                     .from('messages')
                     .select('sender_avatar')
                     .eq('sender_id', user.clerk_id)
-                    .neq('sender_avatar', null)
+                    .not('sender_avatar', 'is', null)
                     .order('created_at', { ascending: false })
                     .limit(1)
-                    .single();
+                    .maybeSingle();
 
                 if (!error && recentMessage?.sender_avatar) {
                     console.log('✅ Found avatar in messages for user:', user.name, recentMessage.sender_avatar);
@@ -5145,6 +5564,128 @@ function getNotificationIcon(type) {
     return icons[type] || icons.info;
 }
 
+// Show message notification
+function showMessageNotification(message) {
+    const roleConfig = getRoleConfig(message.sender_type);
+    const notificationMessage = `Nouveau message de ${message.sender_name} (${roleConfig.label})`;
+
+    showNotification(notificationMessage, 'info');
+
+    // Also show browser notification if permission is granted
+    if ('Notification' in window && Notification.permission === 'granted') {
+        // Check user preference for notification preview
+        const notificationPreviewEnabled = localStorage.getItem('notificationPreviewEnabled') !== 'false'; // Default to true
+
+        let notificationBody;
+        if (notificationPreviewEnabled) {
+            // Include truncated message preview
+            notificationBody = message.content.length > 100 ? message.content.substring(0, 100) + '...' : message.content;
+        } else {
+            // Use generic message without content preview
+            notificationBody = 'Nouveau message';
+        }
+
+        new Notification('Script Lua - Nouveau message', {
+            body: notificationBody,
+            icon: message.sender_avatar || '/favicon.ico',
+            tag: `ticket-${message.ticket_id}`
+        });
+    }
+}
+
+// Play notification sound
+function playNotificationSound() {
+    // Check if audio is allowed (user has interacted with the page)
+    if (!window.audioContextAllowed) {
+        console.log('🔊 Audio not allowed yet - waiting for user interaction');
+        return;
+    }
+
+    try {
+        // Use existing audio context or create one
+        if (!window.audioContext) {
+            window.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
+        const audioContext = window.audioContext;
+
+        // Resume context if suspended (required in modern browsers)
+        if (audioContext.state === 'suspended') {
+            audioContext.resume().then(() => {
+                playBeep(audioContext);
+            }).catch(error => {
+                console.log('Could not resume audio context:', error);
+                fallbackAudio();
+            });
+        } else {
+            playBeep(audioContext);
+        }
+
+        function playBeep(context) {
+            try {
+                const oscillator = context.createOscillator();
+                const gainNode = context.createGain();
+
+                oscillator.connect(gainNode);
+                gainNode.connect(context.destination);
+
+                oscillator.frequency.setValueAtTime(800, context.currentTime);
+                oscillator.frequency.setValueAtTime(600, context.currentTime + 0.1);
+
+                gainNode.gain.setValueAtTime(0.3, context.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, context.currentTime + 0.3);
+
+                oscillator.start(context.currentTime);
+                oscillator.stop(context.currentTime + 0.3);
+            } catch (error) {
+                console.log('Error playing beep:', error);
+                fallbackAudio();
+            }
+        }
+    } catch (error) {
+        console.log('Could not play notification sound:', error);
+        fallbackAudio();
+    }
+}
+
+function fallbackAudio() {
+    try {
+        const audio = new Audio('/notification.mp3');
+        audio.volume = 0.3;
+        audio.play().catch(() => {
+            // Silently fail if audio file doesn't exist or autoplay is blocked
+        });
+    } catch (fallbackError) {
+        // Silently fail
+    }
+}
+
+// Initialize audio context on first user interaction
+function initializeAudioContext() {
+    if (window.audioContextAllowed) return;
+
+    try {
+        if (!window.audioContext) {
+            window.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
+        // Try to resume the context
+        if (window.audioContext.state === 'suspended') {
+            window.audioContext.resume().then(() => {
+                window.audioContextAllowed = true;
+                console.log('🔊 Audio context initialized and resumed');
+            }).catch(error => {
+                console.log('Could not resume audio context:', error);
+            });
+        } else {
+            window.audioContextAllowed = true;
+            console.log('🔊 Audio context initialized');
+        }
+    } catch (error) {
+        console.log('Could not initialize audio context:', error);
+    }
+}
+
 // Manual refresh of current user's Discord info
 async function refreshCurrentUserDiscordInfo() {
     try {
@@ -5274,6 +5815,13 @@ window.closeModal = closeModal;
 async function initializeApp() {
     console.log('🚀 Initializing application...');
 
+    // Request notification permission
+    if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission().then(permission => {
+            console.log('🔔 Notification permission:', permission);
+        });
+    }
+
     // Initialize modal handlers
     initializeModalHandlers();
 
@@ -5282,6 +5830,19 @@ async function initializeApp() {
 
     // Initialize availability toggle for moderators
     initializeAvailabilityToggle();
+
+    // Initialize audio context on first user interaction
+    const initAudioOnInteraction = () => {
+        initializeAudioContext();
+        // Remove listeners after first interaction
+        document.removeEventListener('click', initAudioOnInteraction);
+        document.removeEventListener('keydown', initAudioOnInteraction);
+        document.removeEventListener('touchstart', initAudioOnInteraction);
+    };
+
+    document.addEventListener('click', initAudioOnInteraction);
+    document.addEventListener('keydown', initAudioOnInteraction);
+    document.addEventListener('touchstart', initAudioOnInteraction);
 
     // Wait for ticketing system to be ready (or timeout after reasonable time)
     try {

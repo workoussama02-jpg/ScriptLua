@@ -3949,4 +3949,10 @@ input:checked + .slider:before {
     max-width: 400px;
     line-height: 1.5;
 }
+
+/* First unread message highlighting */
+.first-unread-message {
+    border-left: 3px solid var(--error);
+    background-color: rgba(239, 68, 68, 0.1);
+}
 }
