@@ -3863,7 +3863,6 @@ input:checked + .slider:before {
         min-width: 80px;
     }
 }
-}
 
 /* Loading States */
 .loading {

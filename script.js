@@ -1889,6 +1889,14 @@ function createParticle(container) {
 // TICKETING & CHAT SYSTEM - SUPABASE INTEGRATION
 // ===================================================================
 
+// HTML escaping helper function to prevent XSS attacks
+function escapeHtml(text) {
+    if (text == null) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
 // Supabase Configuration
 const SUPABASE_URL = 'https://ndniosrqgrzcsqnfabxr.supabase.co'; // Replace with your Supabase URL
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5kbmlvc3JxZ3J6Y3NxbmZhYnhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk1NjEyNTAsImV4cCI6MjA4NTEzNzI1MH0.vu7GRZ-C-qdhPT8niHVOgz3E1Sxhv5hewi-GDSGR01w'; // Replace with your Supabase anon key
@@ -1901,6 +1909,12 @@ let currentTicketId = null;
 let chatChannel = null;
 let ticketsChannel = null; // For real-time ticket updates
 let isInitialized = false; // Flag to prevent duplicate initialization
+
+// Promise that resolves when ticketing system is initialized
+let ticketingSystemReady = new Promise(resolve => {
+    // Store the resolve function to be called when initialization is complete
+    window.resolveTicketingReady = resolve;
+});
 
 // Initialize ticketing system
 async function initializeTicketingSystem() {
@@ -1946,6 +1960,11 @@ async function initializeTicketingSystem() {
         // Mark as initialized
         isInitialized = true;
         console.log('✅ Ticketing system initialized successfully');
+
+        // Resolve the ready promise
+        if (window.resolveTicketingReady) {
+            window.resolveTicketingReady();
+        }
     } catch (error) {
         console.error('❌ Error initializing ticketing system:', error);
         showNotification('Erreur lors de l\'initialisation du système', 'error');
@@ -2322,6 +2341,12 @@ async function loadTickets() {
             return;
         }
 
+        // Check if currentUserRole is set
+        if (!currentUserRole) {
+            console.log('⚠️ User role not available yet, skipping ticket loading');
+            return;
+        }
+
         let tickets = null;
         let error = null;
 
@@ -2604,29 +2629,29 @@ function createTicketCard(ticket) {
     }
 
     row.innerHTML = `
-        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900 dark:text-white">#${shortId}</td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900 dark:text-white">#${escapeHtml(shortId)}</td>
         <td class="px-6 py-4 whitespace-nowrap">
-            <div class="text-sm font-medium text-slate-900 dark:text-white">${problemType}</div>
+            <div class="text-sm font-medium text-slate-900 dark:text-white">${escapeHtml(problemType)}</div>
         </td>
         <td class="px-6 py-4 whitespace-nowrap">
-            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full ${statusColors[ticket.status] || 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200'}">${ticket.status}</span>
+            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full ${statusColors[ticket.status] || 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200'}">${escapeHtml(ticket.status)}</span>
         </td>
         <td class="px-6 py-4 whitespace-nowrap" onclick="event.stopPropagation();">
             ${priorityHtml}
         </td>
         ${currentUserRole === 'admin' ? `
-        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">${ticket.assigned_to_name || 'Non assigné'}</td>
-        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">${ticket.client_name || 'Client inconnu'}</td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">${escapeHtml(ticket.assigned_to_name || 'Non assigné')}</td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">${escapeHtml(ticket.client_name || 'Client inconnu')}</td>
         <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">${new Date(ticket.created_at).toLocaleDateString('fr-FR')}</td>
         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium" onclick="event.stopPropagation();">
             ${actionsHtml}
         </td>` : currentUserRole === 'moderator' ? `
-        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">${ticket.client_name || 'Client inconnu'}</td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">${escapeHtml(ticket.client_name || 'Client inconnu')}</td>
         <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">${new Date(ticket.created_at).toLocaleDateString('fr-FR')}</td>
         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium" onclick="event.stopPropagation();">
             ${actionsHtml}
         </td>` : `
-        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">${ticket.assigned_to_name || 'Non assigné'}</td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">${escapeHtml(ticket.assigned_to_name || 'Non assigné')}</td>
         <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">${new Date(ticket.created_at).toLocaleDateString('fr-FR')}</td>
         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium" onclick="event.stopPropagation();">
             ${actionsHtml}
@@ -2930,42 +2955,130 @@ function createMessageElement(message) {
     if (isRightAligned) {
         // Right-aligned bubble for current user's messages
         messageDiv.className = 'message-bubble user';
-        const avatarHtml = message.sender_avatar
-            ? `<img src="${message.sender_avatar}" alt="Avatar" class="w-10 h-10 rounded-full object-cover" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />`
-            : `<div class="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0"><span class="text-sm">${roleConfig.icon}</span></div>`;
 
-        messageDiv.innerHTML = `
-            <div class="flex flex-col items-end space-y-1">
-                ${senderInfo.outerHTML}
-                <div class="flex items-end space-x-2">
-                    <div class="bg-blue-500 text-white px-4 py-3 rounded-2xl rounded-br-md max-w-md shadow-lg">
-                        <p class="text-sm">${message.content}</p>
-                    </div>
-                    ${avatarHtml}
-                </div>
-            </div>
-            <div class="text-right text-xs text-gray-500 mt-1">${timeString}</div>
-        `;
+        // Create avatar element
+        const avatarContainer = document.createElement('div');
+        if (message.sender_avatar) {
+            const avatarImg = document.createElement('img');
+            avatarImg.src = message.sender_avatar;
+            avatarImg.alt = 'Avatar';
+            avatarImg.className = 'w-10 h-10 rounded-full object-cover';
+            avatarImg.onerror = function() {
+                this.style.display = 'none';
+                this.nextElementSibling.style.display = 'flex';
+            };
+            avatarContainer.appendChild(avatarImg);
+
+            const fallbackDiv = document.createElement('div');
+            fallbackDiv.className = 'w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0';
+            fallbackDiv.style.display = 'none';
+            const fallbackSpan = document.createElement('span');
+            fallbackSpan.className = 'text-sm';
+            fallbackSpan.textContent = roleConfig.icon;
+            fallbackDiv.appendChild(fallbackSpan);
+            avatarContainer.appendChild(fallbackDiv);
+        } else {
+            avatarContainer.className = 'w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0';
+            const avatarSpan = document.createElement('span');
+            avatarSpan.className = 'text-sm';
+            avatarSpan.textContent = roleConfig.icon;
+            avatarContainer.appendChild(avatarSpan);
+        }
+
+        // Create message bubble container
+        const bubbleContainer = document.createElement('div');
+        bubbleContainer.className = 'bg-blue-500 text-white px-4 py-3 rounded-2xl rounded-br-md max-w-md shadow-lg';
+
+        // Create message paragraph (safe content)
+        const messageParagraph = document.createElement('p');
+        messageParagraph.className = 'text-sm';
+        messageParagraph.textContent = message.content;
+        bubbleContainer.appendChild(messageParagraph);
+
+        // Create flex container for bubble and avatar
+        const flexContainer = document.createElement('div');
+        flexContainer.className = 'flex items-end space-x-2';
+        flexContainer.appendChild(bubbleContainer);
+        flexContainer.appendChild(avatarContainer);
+
+        // Create main container
+        const mainContainer = document.createElement('div');
+        mainContainer.className = 'flex flex-col items-end space-y-1';
+        mainContainer.appendChild(senderInfo);
+        mainContainer.appendChild(flexContainer);
+
+        // Create timestamp
+        const timestampDiv = document.createElement('div');
+        timestampDiv.className = 'text-right text-xs text-gray-500 mt-1';
+        timestampDiv.textContent = timeString;
+
+        // Append to message div
+        messageDiv.appendChild(mainContainer);
+        messageDiv.appendChild(timestampDiv);
     } else {
         // Left-aligned bubble for others
         messageDiv.className = 'message-bubble other';
         const bubbleClass = 'bg-white border border-gray-200 text-gray-900';
-        const avatarHtml = message.sender_avatar
-            ? `<img src="${message.sender_avatar}" alt="Avatar" class="w-10 h-10 rounded-full object-cover" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />`
-            : `<div class="w-10 h-10 ${roleConfig.bgColor} rounded-full flex items-center justify-center flex-shrink-0"><span class="text-sm">${roleConfig.icon}</span></div>`;
 
-        messageDiv.innerHTML = `
-            <div class="flex flex-col items-start space-y-1">
-                ${senderInfo.outerHTML}
-                <div class="flex items-end space-x-2">
-                    ${avatarHtml}
-                    <div class="${bubbleClass} px-4 py-3 rounded-2xl rounded-bl-md max-w-md shadow-sm">
-                        <p class="text-sm">${message.content}</p>
-                    </div>
-                </div>
-            </div>
-            <div class="text-left text-xs text-gray-500 mt-1 ml-12">${timeString}</div>
-        `;
+        // Create avatar element
+        const avatarContainer = document.createElement('div');
+        if (message.sender_avatar) {
+            const avatarImg = document.createElement('img');
+            avatarImg.src = message.sender_avatar;
+            avatarImg.alt = 'Avatar';
+            avatarImg.className = 'w-10 h-10 rounded-full object-cover';
+            avatarImg.onerror = function() {
+                this.style.display = 'none';
+                this.nextElementSibling.style.display = 'flex';
+            };
+            avatarContainer.appendChild(avatarImg);
+
+            const fallbackDiv = document.createElement('div');
+            fallbackDiv.className = 'w-10 h-10 ' + roleConfig.bgColor + ' rounded-full flex items-center justify-center flex-shrink-0';
+            fallbackDiv.style.display = 'none';
+            const fallbackSpan = document.createElement('span');
+            fallbackSpan.className = 'text-sm';
+            fallbackSpan.textContent = roleConfig.icon;
+            fallbackDiv.appendChild(fallbackSpan);
+            avatarContainer.appendChild(fallbackDiv);
+        } else {
+            avatarContainer.className = 'w-10 h-10 ' + roleConfig.bgColor + ' rounded-full flex items-center justify-center flex-shrink-0';
+            const avatarSpan = document.createElement('span');
+            avatarSpan.className = 'text-sm';
+            avatarSpan.textContent = roleConfig.icon;
+            avatarContainer.appendChild(avatarSpan);
+        }
+
+        // Create message bubble container
+        const bubbleContainer = document.createElement('div');
+        bubbleContainer.className = bubbleClass + ' px-4 py-3 rounded-2xl rounded-bl-md max-w-md shadow-sm';
+
+        // Create message paragraph (safe content)
+        const messageParagraph = document.createElement('p');
+        messageParagraph.className = 'text-sm';
+        messageParagraph.textContent = message.content;
+        bubbleContainer.appendChild(messageParagraph);
+
+        // Create flex container for avatar and bubble
+        const flexContainer = document.createElement('div');
+        flexContainer.className = 'flex items-end space-x-2';
+        flexContainer.appendChild(avatarContainer);
+        flexContainer.appendChild(bubbleContainer);
+
+        // Create main container
+        const mainContainer = document.createElement('div');
+        mainContainer.className = 'flex flex-col items-start space-y-1';
+        mainContainer.appendChild(senderInfo);
+        mainContainer.appendChild(flexContainer);
+
+        // Create timestamp
+        const timestampDiv = document.createElement('div');
+        timestampDiv.className = 'text-left text-xs text-gray-500 mt-1 ml-12';
+        timestampDiv.textContent = timeString;
+
+        // Append to message div
+        messageDiv.appendChild(mainContainer);
+        messageDiv.appendChild(timestampDiv);
     }
 
     return messageDiv;
@@ -3271,20 +3384,28 @@ async function assignQueuedTickets(availableModerator) {
         
         for (const ticket of ticketsToAssign) {
             try {
-                const { error: assignError } = await supabaseClient
+                const { data: updateResult, error: assignError } = await supabaseClient
                     .from('tickets')
                     .update({
                         assigned_to: availableModerator.clerk_id,
                         assigned_to_name: availableModerator.name,
                         status: 'in-progress'
                     })
-                    .eq('id', ticket.id);
-                
+                    .eq('id', ticket.id)
+                    .is('assigned_to', null)
+                    .select();
+
                 if (assignError) {
                     console.error('Error assigning ticket', ticket.id, ':', assignError);
                     continue;
                 }
-                
+
+                // Check if the update actually affected a row (ticket was still unassigned)
+                if (!updateResult || updateResult.length === 0) {
+                    console.log('⚠️ Ticket', ticket.id, 'was already assigned, skipping notification');
+                    continue;
+                }
+
                 console.log('✅ Assigned ticket', ticket.id, 'to moderator', availableModerator.name);
                 
                 // Notify the client that their ticket has been assigned
@@ -4005,13 +4126,13 @@ function createUserTableRow(user) {
     let actionButtonHtml = '';
     if (isDeactivated) {
         actionButtonHtml = `
-            <button class="p-2 text-green-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors" onclick="reactivateUser('${user.id}', '${user.name || user.email}')" title="Réactiver le compte">
+            <button class="p-2 text-green-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors user-action-btn" data-action="reactivate" data-user-id="${user.id}" data-user-name="${user.name || user.email}" title="Réactiver le compte">
                 <span class="material-icons-round text-lg">restore</span>
             </button>
         `;
     } else {
         actionButtonHtml = `
-            <button class="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" onclick="deleteUser('${user.id}', '${user.name || user.email}')" title="Désactiver le compte">
+            <button class="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors user-action-btn" data-action="delete" data-user-id="${user.id}" data-user-name="${user.name || user.email}" title="Désactiver le compte">
                 <span class="material-icons-round text-lg">block</span>
             </button>
         `;
@@ -4252,6 +4373,25 @@ function initializeUserManagement() {
     if (filterBtn) {
         filterBtn.addEventListener('click', function() {
             showNotification('Filtres avancés en cours de développement', 'info');
+        });
+    }
+
+    // User action buttons (event delegation)
+    const usersTableBody = document.getElementById('usersTableBody');
+    if (usersTableBody) {
+        usersTableBody.addEventListener('click', function(e) {
+            const button = e.target.closest('.user-action-btn');
+            if (!button) return;
+
+            const action = button.dataset.action;
+            const userId = button.dataset.userId;
+            const userName = button.dataset.userName;
+
+            if (action === 'reactivate') {
+                reactivateUser(userId, userName);
+            } else if (action === 'delete') {
+                deleteUser(userId, userName);
+            }
         });
     }
 }
@@ -5131,7 +5271,7 @@ window.openModal = openModal;
 window.closeModal = closeModal;
 
 // Initialize the application after all functions are exported
-function initializeApp() {
+async function initializeApp() {
     console.log('🚀 Initializing application...');
 
     // Initialize modal handlers
@@ -5143,11 +5283,17 @@ function initializeApp() {
     // Initialize availability toggle for moderators
     initializeAvailabilityToggle();
 
-    // Load initial data after a short delay to ensure DOM is ready
-    setTimeout(() => {
-        console.log('📊 Starting initial data load...');
-        loadTickets();
-    }, 100);
+    // Wait for ticketing system to be ready (or timeout after reasonable time)
+    try {
+        console.log('⏳ Waiting for ticketing system to be ready...');
+        await Promise.race([
+            ticketingSystemReady,
+            new Promise(resolve => setTimeout(resolve, 5000)) // Timeout after 5 seconds
+        ]);
+        console.log('✅ Ticketing system initialization completed or timed out');
+    } catch (error) {
+        console.log('⚠️ Ticketing system initialization wait failed:', error);
+    }
 }
 
 // Call initializeApp when the script loads
