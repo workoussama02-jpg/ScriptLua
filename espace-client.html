@@ -4,21 +4,50 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Espace Client - Script Lua</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎫</text></svg>">
+    
+    <!-- Tailwind CDN - Only used on this page for rapid development -->
+    <!-- TODO: Replace with proper Tailwind build for production -->
     <script src="https://cdn.tailwindcss.com?plugins=forms,typography,container-queries"></script>
+    
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet"/>
 
-    <!-- Clerk Authentication -->
-    <script
-      async
-      crossorigin="anonymous"
-      data-clerk-publishable-key="pk_test_bWVhc3VyZWQtamFndWFyLTcuY2xlcmsuYWNjb3VudHMuZGV2JA"
-      src="https://cdn.jsdelivr.net/npm/@clerk/clerk-js@latest/dist/clerk.browser.js"
-      type="text/javascript"
-    ></script>
+    <!-- Environment Variables Setup (MUST load before Clerk) -->
+    <script type="module">
+        // Set environment variables directly (since import.meta.env doesn't work in HTML)
+        // These will be overridden by Vite in development/production
+        const CLERK_KEY = 'pk_test_bWVhc3VyZWQtamFndWFyLTcuY2xlcmsuYWNjb3VudHMuZGV2JA';
+        const SUPABASE_URL = 'https://ndniosrqgrzcsqnfabxr.supabase.co';
+        const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5kbmlvc3JxZ3J6Y3NxbmZhYnhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk1NjEyNTAsImV4cCI6MjA4NTEzNzI1MH0.vu7GRZ-C-qdhPT8niHVOgz3E1Sxhv5hewi-GDSGR01w';
+        
+        // Make available globally
+        window._env_ = {
+            VITE_CLERK_PUBLISHABLE_KEY: CLERK_KEY,
+            VITE_SUPABASE_URL: SUPABASE_URL,
+            VITE_SUPABASE_ANON_KEY: SUPABASE_ANON
+        };
+        
+        // Inject Clerk script with correct key
+        const clerkScript = document.createElement('script');
+        clerkScript.src = 'https://cdn.jsdelivr.net/npm/@clerk/clerk-js@latest/dist/clerk.browser.js';
+        clerkScript.async = true;
+        clerkScript.crossOrigin = 'anonymous';
+        clerkScript.type = 'text/javascript';
+        clerkScript.setAttribute('data-clerk-publishable-key', CLERK_KEY);
+        document.head.appendChild(clerkScript);
+        
+        console.log('✅ Environment loaded:', {
+            clerk: CLERK_KEY.substring(0, 15) + '...',
+            supabase: SUPABASE_URL
+        });
+    </script>
 
     <!-- Supabase Client -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <!-- Configuration Module -->
+    <script src="config.js"></script>
 
     <script>
         tailwind.config = {
@@ -83,6 +112,40 @@
 
         .dark .table-row:hover {
             background-color: rgba(255, 255, 255, 0.03);
+        }
+
+        /* Table container rounded corners fix */
+        .bg-white.rounded-xl.border,
+        .dark .bg-slate-800.rounded-xl.border {
+            overflow: hidden;
+        }
+
+        /* Ensure table respects parent rounded corners */
+        .overflow-x-auto {
+            border-radius: inherit;
+        }
+
+        /* Round bottom corners of last table row */
+        tbody tr:last-child td:first-child {
+            border-bottom-left-radius: 0.75rem;
+        }
+
+        tbody tr:last-child td:last-child {
+            border-bottom-right-radius: 0.75rem;
+        }
+
+        /* Remove bottom border from last row to prevent overlap */
+        tbody tr:last-child {
+            border-bottom: none;
+        }
+
+        /* Ensure thead respects top rounded corners */
+        thead tr:first-child th:first-child {
+            border-top-left-radius: 0.75rem;
+        }
+
+        thead tr:first-child th:last-child {
+            border-top-right-radius: 0.75rem;
         }
 
         .status-indicator {
@@ -303,7 +366,7 @@
 </div>
 </div>
 
-<div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-visible">
+<div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
 <div class="p-6 border-b border-slate-200 dark:border-slate-700">
 <div class="flex items-center justify-between">
 <h2 class="text-xl font-bold text-slate-800 dark:text-white">Tickets</h2>
@@ -423,7 +486,7 @@
 </div>
 </div>
 
-<div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-visible">
+<div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
 <div class="p-6 border-b border-slate-200 dark:border-slate-700">
 <div class="flex items-center justify-between">
 <h2 class="text-xl font-bold text-slate-800 dark:text-white">Tickets</h2>
@@ -538,7 +601,7 @@
 
 <div class="grid grid-cols-1 gap-6 mb-8">
 <div>
-<div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-visible">
+<div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
 <div class="p-6 border-b border-slate-200 dark:border-slate-700">
 <div class="flex items-center justify-between">
 <h2 class="text-xl font-bold text-slate-800 dark:text-white">Tous les Tickets</h2>
@@ -630,10 +693,10 @@
 
 <!-- Chat Modal -->
 <div class="modal hidden" id="chat-modal">
-  <div class="modal-content bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl h-[600px] flex flex-col overflow-hidden">
+  <div class="modal-content bg-white dark:bg-slate-800 rounded-2xl shadow-2xl overflow-hidden chat-size-medium" id="chatModalContent">
 
     <!-- Header -->
-    <div class="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-4 flex items-center justify-between">
+    <div class="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-4 flex items-center justify-between cursor-move" id="chatModalHeader">
       <div class="flex items-center space-x-3">
         <div class="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
           <span class="material-icons-round text-lg">support_agent</span>
@@ -644,9 +707,12 @@
         </div>
       </div>
       <div class="flex items-center space-x-2">
-        <button class="p-2 hover:bg-white/10 rounded-lg transition-colors">
-          <span class="material-icons-round">minimize</span>
-        </button>
+        <!-- Size buttons -->
+        <div class="flex items-center space-x-1 mr-2 bg-white/10 rounded-lg p-1">
+          <button class="chat-size-btn px-2 py-1 rounded text-xs font-medium hover:bg-white/20 transition-colors" data-size="small" title="Petit">P</button>
+          <button class="chat-size-btn px-2 py-1 rounded text-xs font-medium hover:bg-white/20 transition-colors bg-white/20" data-size="medium" title="Moyen">M</button>
+          <button class="chat-size-btn px-2 py-1 rounded text-xs font-medium hover:bg-white/20 transition-colors" data-size="large" title="Grand">G</button>
+        </div>
         <button class="p-2 hover:bg-white/10 rounded-lg transition-colors close-modal" id="closeChatModal">
           <span class="material-icons-round">close</span>
         </button>

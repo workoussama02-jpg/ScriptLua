@@ -1,0 +1,26 @@
+{
+  "name": "script-lua-website",
+  "version": "1.0.0",
+  "description": "Script Lua - Gaming Scripts Marketplace",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "serve": "vite preview"
+  },
+  "keywords": [
+    "gaming",
+    "scripts",
+    "dofus",
+    "marketplace"
+  ],
+  "author": "Script Lua Team",
+  "license": "MIT",
+  "devDependencies": {
+    "autoprefixer": "^10.4.24",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.18",
+    "vite": "^5.4.21"
+  }
+}

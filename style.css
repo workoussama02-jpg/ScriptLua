@@ -3094,18 +3094,27 @@ input:checked + .slider:before {
     height: 100%;
     background-color: rgba(0, 0, 0, 0.5);
     backdrop-filter: blur(5px);
+    align-items: center;
+    justify-content: center;
+}
+
+.modal:not(.hidden) {
+    display: flex;
 }
 
 .modal-content {
     background-color: var(--card-bg);
-    margin: 5% auto;
     padding: 0;
     border: 1px solid var(--border-color);
     border-radius: 15px;
-    width: 90%;
-    max-width: 600px;
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
     animation: modalFadeIn 0.3s ease;
+}
+
+/* Generic modal sizes - NOT for chat modal */
+.modal:not(#chat-modal) .modal-content {
+    width: 90%;
+    max-width: 600px;
 }
 
 .large-modal .modal-content {
@@ -3192,13 +3201,49 @@ input:checked + .slider:before {
 
 /* Chat Modal Styles - Large Modal Design */
 #chat-modal .modal-content {
-    width: 95vw;
-    height: 90vh;
-    max-width: 1400px;
-    max-height: 900px;
-    display: flex;
-    flex-direction: column;
-    margin: 2vh auto;
+    display: flex !important;
+    flex-direction: column !important;
+    flex-grow: 0 !important;
+    flex-shrink: 0 !important;
+    transition: all 0.3s ease;
+    position: relative;
+}
+
+/* Chat modal sizes - matching reference screenshots exactly */
+#chat-modal .modal-content.chat-size-small {
+    width: 560px !important;
+    height: 580px !important;
+    min-width: 560px !important;
+    min-height: 580px !important;
+    max-width: 90vw !important;
+    max-height: 85vh !important;
+}
+
+#chat-modal .modal-content.chat-size-medium {
+    width: 950px !important;
+    height: 870px !important;
+    min-width: 950px !important;
+    min-height: 870px !important;
+    max-width: 90vw !important;
+    max-height: 85vh !important;
+}
+
+#chat-modal .modal-content.chat-size-large {
+    width: 1500px !important;
+    height: 870px !important;
+    min-width: 1500px !important;
+    min-height: 870px !important;
+    max-width: 90vw !important;
+    max-height: 85vh !important;
+}
+
+#chatModalHeader {
+    cursor: move;
+    user-select: none;
+}
+
+#chatModalHeader.dragging {
+    cursor: grabbing !important;
 }
 
 /* Chat Messages Area - Enhanced for large modal */
@@ -3690,12 +3735,32 @@ input:checked + .slider:before {
 
 /* Responsive Design for Large Chat Modal */
 @media (max-width: 768px) {
-    #chat-modal .modal-content {
-        width: 98vw;
-        height: 95vh;
-        margin: 1vh auto;
-        max-width: none;
-        max-height: none;
+    /* On tablets, scale down proportionally */
+    #chat-modal .modal-content.chat-size-small {
+        width: 450px !important;
+        height: 480px !important;
+        min-width: 450px !important;
+        min-height: 480px !important;
+        max-width: 90vw !important;
+        max-height: 80vh !important;
+    }
+    
+    #chat-modal .modal-content.chat-size-medium {
+        width: 500px !important;
+        height: 450px !important;
+        min-width: 500px !important;
+        min-height: 450px !important;
+        max-width: 90vw !important;
+        max-height: 80vh !important;
+    }
+    
+    #chat-modal .modal-content.chat-size-large {
+        width: 700px !important;
+        height: 550px !important;
+        min-width: 700px !important;
+        min-height: 550px !important;
+        max-width: 90vw !important;
+        max-height: 85vh !important;
     }
 
     #chat-messages {
@@ -3791,11 +3856,20 @@ input:checked + .slider:before {
 }
 
 @media (max-width: 480px) {
-    #chat-modal .modal-content {
-        width: 100vw;
-        height: 100vh;
-        margin: 0;
-        border-radius: 0;
+    /* On phones, use viewport-based sizing */
+    #chat-modal .modal-content.chat-size-small {
+        width: 90vw !important;
+        height: 65vh !important;
+    }
+    
+    #chat-modal .modal-content.chat-size-medium {
+        width: 95vw !important;
+        height: 60vh !important;
+    }
+    
+    #chat-modal .modal-content.chat-size-large {
+        width: 98vw !important;
+        height: 70vh !important;
     }
 
     #chat-messages {

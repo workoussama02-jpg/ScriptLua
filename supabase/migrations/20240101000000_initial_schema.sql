@@ -3,129 +3,20 @@
 -- Overview
 -- This schema implements a comprehensive ticketing and real-time chat system with role-based access control for the Script Lua application.
 
--- Database Tables
+-- Database Functions (defined first to avoid dependency issues)
 
--- 1. users
-CREATE TABLE IF NOT EXISTS users (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    clerk_id TEXT UNIQUE NOT NULL,
-    email TEXT,
-    name TEXT,
-    discord_username TEXT,
-    discord_avatar TEXT,
-    role TEXT DEFAULT 'client' CHECK (role IN ('client', 'moderator', 'admin')),
-    available BOOLEAN DEFAULT false,
-    active BOOLEAN DEFAULT true,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+-- Role checking functions to avoid RLS recursion
+CREATE OR REPLACE FUNCTION is_admin(user_clerk_id TEXT) RETURNS BOOLEAN AS $$
+BEGIN
+    RETURN EXISTS (SELECT 1 FROM users WHERE clerk_id = user_clerk_id AND role = 'admin' AND active = true);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Enable RLS
-ALTER TABLE users ENABLE ROW LEVEL SECURITY;
-
--- Policies are defined in the migration section below
-
--- 2. tickets
-CREATE TABLE IF NOT EXISTS tickets (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    title TEXT NOT NULL,
-    description TEXT NOT NULL,
-    priority TEXT DEFAULT 'normal' CHECK (priority IN ('low', 'normal', 'high', 'urgent')),
-    status TEXT DEFAULT 'open' CHECK (status IN ('open', 'in-progress', 'closed', 'escalated')),
-    client_id TEXT NOT NULL REFERENCES users(clerk_id) ON DELETE CASCADE,
-    client_name TEXT NOT NULL,
-    assigned_to TEXT REFERENCES users(clerk_id),
-    assigned_to_name TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Enable RLS
-ALTER TABLE tickets ENABLE ROW LEVEL SECURITY;
-
--- Policies
-DROP POLICY IF EXISTS "Clients can view their own tickets" ON tickets;
-DROP POLICY IF EXISTS "Clients can create tickets" ON tickets;
-DROP POLICY IF EXISTS "Moderators can view assigned and open tickets" ON tickets;
-DROP POLICY IF EXISTS "Moderators can update tickets" ON tickets;
-
--- For development/testing: Allow anonymous access to tickets table
-CREATE POLICY "Allow anonymous access to tickets" ON tickets
-    FOR ALL USING (true);
-
--- 3. messages
-CREATE TABLE IF NOT EXISTS messages (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
-    content TEXT NOT NULL,
-    sender_type TEXT NOT NULL CHECK (sender_type IN ('client', 'moderator', 'admin')),
-    sender_name TEXT NOT NULL,
-    sender_id TEXT NOT NULL,
-    sender_avatar TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Enable RLS
-ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
-
--- Policies
-DROP POLICY IF EXISTS "Users can view messages for their tickets" ON messages;
-DROP POLICY IF EXISTS "Users can insert messages for their tickets" ON messages;
-
--- For development/testing: Allow anonymous access to messages table
-CREATE POLICY "Allow anonymous access to messages" ON messages
-    FOR ALL USING (true);
-
--- 4. internal_notes (for moderators/admins)
-CREATE TABLE IF NOT EXISTS internal_notes (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
-    content TEXT NOT NULL,
-    author_id TEXT NOT NULL REFERENCES users(clerk_id),
-    author_name TEXT NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Enable RLS
-ALTER TABLE internal_notes ENABLE ROW LEVEL SECURITY;
-
--- Policies (only moderators and admins)
-DROP POLICY IF EXISTS "Staff can view internal notes" ON internal_notes;
-DROP POLICY IF EXISTS "Staff can create internal notes" ON internal_notes;
-
-CREATE POLICY "Staff can view internal notes" ON internal_notes
-    FOR SELECT USING (is_staff(auth.jwt() ->> 'sub'));
-
-CREATE POLICY "Staff can create internal notes" ON internal_notes
-    FOR INSERT WITH CHECK (is_staff(auth.jwt() ->> 'sub'));
-
--- 5. ticket_reads (for unread message tracking)
-CREATE TABLE IF NOT EXISTS ticket_reads (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    last_read_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    UNIQUE(ticket_id, user_id)
-);
-
--- Enable RLS
-ALTER TABLE ticket_reads ENABLE ROW LEVEL SECURITY;
-
--- Policies
-DROP POLICY IF EXISTS "Users can view their own read timestamps" ON ticket_reads;
-DROP POLICY IF EXISTS "Users can insert their own read timestamps" ON ticket_reads;
-DROP POLICY IF EXISTS "Users can update their own read timestamps" ON ticket_reads;
-
--- For development/testing: Allow anonymous access to ticket_reads table
-CREATE POLICY "Allow anonymous access to ticket_reads" ON ticket_reads
-    FOR ALL USING (true);
-
--- Add index on user_id for ticket_reads table (ticket_id is already indexed by the UNIQUE constraint)
-CREATE INDEX IF NOT EXISTS idx_ticket_reads_user_id ON ticket_reads(user_id);
-
--- Database Functions
+CREATE OR REPLACE FUNCTION is_staff(user_clerk_id TEXT) RETURNS BOOLEAN AS $$
+BEGIN
+    RETURN EXISTS (SELECT 1 FROM users WHERE clerk_id = user_clerk_id AND role IN ('moderator', 'admin') AND active = true);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 CREATE OR REPLACE FUNCTION get_moderator_stats(moderator_id TEXT)
 RETURNS TABLE (
@@ -161,7 +52,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Unread Messages Count Function
-CREATE OR REPLACE FUNCTION get_unread_message_count(p_ticket_id UUID, p_user_id UUID)
+CREATE OR REPLACE FUNCTION get_unread_message_count(p_ticket_id UUID, p_user_clerk_id TEXT)
 RETURNS INTEGER AS $$
 DECLARE
     last_read_time TIMESTAMP WITH TIME ZONE;
@@ -170,39 +61,193 @@ BEGIN
     -- Get the last read timestamp for this user and ticket
     SELECT last_read_at INTO last_read_time
     FROM ticket_reads
-    WHERE ticket_id = p_ticket_id AND user_id = p_user_id;
+    WHERE ticket_id = p_ticket_id AND user_id = p_user_clerk_id;
 
     -- If no read timestamp exists, all messages are unread (excluding user's own messages)
     IF last_read_time IS NULL THEN
         SELECT COUNT(*) INTO unread_count
         FROM messages
         WHERE ticket_id = p_ticket_id
-        AND sender_id != p_user_id;
+        AND sender_id != p_user_clerk_id;
     ELSE
         -- Count messages created after the last read time (excluding user's own messages)
         SELECT COUNT(*) INTO unread_count
         FROM messages
         WHERE ticket_id = p_ticket_id
         AND created_at > last_read_time
-        AND sender_id != p_user_id;
+        AND sender_id != p_user_clerk_id;
     END IF;
 
     RETURN unread_count;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Role checking functions to avoid RLS recursion
-CREATE OR REPLACE FUNCTION is_admin(user_clerk_id TEXT) RETURNS BOOLEAN AS $$
-BEGIN
-    RETURN EXISTS (SELECT 1 FROM users WHERE clerk_id = user_clerk_id AND role = 'admin' AND active = true);
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+-- Database Tables
 
-CREATE OR REPLACE FUNCTION is_staff(user_clerk_id TEXT) RETURNS BOOLEAN AS $$
-BEGIN
-    RETURN EXISTS (SELECT 1 FROM users WHERE clerk_id = user_clerk_id AND role IN ('moderator', 'admin') AND active = true);
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+-- 1. users
+CREATE TABLE IF NOT EXISTS users (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    clerk_id TEXT UNIQUE NOT NULL,
+    email TEXT,
+    name TEXT,
+    discord_username TEXT,
+    discord_avatar TEXT,
+    role TEXT DEFAULT 'client' CHECK (role IN ('client', 'moderator', 'admin')),
+    available BOOLEAN DEFAULT false,
+    active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Enable RLS
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+
+-- Users policies
+CREATE POLICY "Users can view their own data" ON users
+    FOR SELECT USING (auth.jwt() ->> 'sub' = clerk_id AND active = true);
+
+CREATE POLICY "Users can update their own data" ON users
+    FOR UPDATE USING (auth.jwt() ->> 'sub' = clerk_id AND active = true);
+
+CREATE POLICY "Admins can view all users" ON users
+    FOR SELECT USING (is_admin(auth.jwt() ->> 'sub'));
+
+CREATE POLICY "Admins can update all users" ON users
+    FOR UPDATE USING (is_admin(auth.jwt() ->> 'sub'));
+
+-- 2. tickets
+CREATE TABLE IF NOT EXISTS tickets (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    priority TEXT DEFAULT 'normal' CHECK (priority IN ('low', 'normal', 'high', 'urgent')),
+    status TEXT DEFAULT 'open' CHECK (status IN ('open', 'in-progress', 'closed', 'escalated')),
+    client_id TEXT NOT NULL REFERENCES users(clerk_id) ON DELETE CASCADE,
+    client_name TEXT NOT NULL,
+    assigned_to TEXT REFERENCES users(clerk_id),
+    assigned_to_name TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Enable RLS
+ALTER TABLE tickets ENABLE ROW LEVEL SECURITY;
+
+-- Tickets policies
+CREATE POLICY "Clients can view their own tickets" ON tickets
+    FOR SELECT USING (client_id = auth.jwt() ->> 'sub' AND EXISTS (SELECT 1 FROM users WHERE clerk_id = auth.jwt() ->> 'sub' AND active = true));
+
+CREATE POLICY "Clients can create tickets" ON tickets
+    FOR INSERT WITH CHECK (client_id = auth.jwt() ->> 'sub' AND EXISTS (SELECT 1 FROM users WHERE clerk_id = auth.jwt() ->> 'sub' AND active = true));
+
+CREATE POLICY "Moderators can view assigned and open tickets" ON tickets
+    FOR SELECT USING (
+        is_staff(auth.jwt() ->> 'sub') AND (
+            assigned_to = auth.jwt() ->> 'sub' OR
+            status = 'open' OR
+            is_admin(auth.jwt() ->> 'sub')
+        )
+    );
+
+CREATE POLICY "Moderators can update tickets" ON tickets
+    FOR UPDATE USING (is_staff(auth.jwt() ->> 'sub'));
+
+-- 3. messages
+CREATE TABLE IF NOT EXISTS messages (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    sender_type TEXT NOT NULL CHECK (sender_type IN ('client', 'moderator', 'admin')),
+    sender_name TEXT NOT NULL,
+    sender_id TEXT NOT NULL,
+    sender_avatar TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Enable RLS
+ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
+
+-- Messages policies
+CREATE POLICY "Users can view messages for their tickets" ON messages
+    FOR SELECT USING (
+        EXISTS (
+            SELECT 1 FROM tickets
+            WHERE tickets.id = messages.ticket_id
+            AND (
+                tickets.client_id = auth.jwt() ->> 'sub' OR
+                tickets.assigned_to = auth.jwt() ->> 'sub' OR
+                is_staff(auth.jwt() ->> 'sub')
+            )
+        ) AND EXISTS (SELECT 1 FROM users WHERE clerk_id = auth.jwt() ->> 'sub' AND active = true)
+    );
+
+CREATE POLICY "Users can insert messages for their tickets" ON messages
+    FOR INSERT WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM tickets
+            WHERE tickets.id = messages.ticket_id
+            AND (
+                tickets.client_id = auth.jwt() ->> 'sub' OR
+                tickets.assigned_to = auth.jwt() ->> 'sub' OR
+                is_staff(auth.jwt() ->> 'sub')
+            )
+        ) AND EXISTS (SELECT 1 FROM users WHERE clerk_id = auth.jwt() ->> 'sub' AND active = true)
+    );
+
+-- 4. internal_notes (for moderators/admins)
+CREATE TABLE IF NOT EXISTS internal_notes (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    author_id TEXT NOT NULL REFERENCES users(clerk_id),
+    author_name TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Enable RLS
+ALTER TABLE internal_notes ENABLE ROW LEVEL SECURITY;
+
+-- Internal notes policies (only moderators and admins)
+CREATE POLICY "Staff can view internal notes" ON internal_notes
+    FOR SELECT USING (is_staff(auth.jwt() ->> 'sub'));
+
+CREATE POLICY "Staff can create internal notes" ON internal_notes
+    FOR INSERT WITH CHECK (is_staff(auth.jwt() ->> 'sub'));
+
+-- 5. ticket_reads (for unread message tracking) - UPDATED TO USE CLERK_ID
+CREATE TABLE IF NOT EXISTS ticket_reads (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL, -- Changed from UUID to TEXT for clerk_id
+    last_read_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(ticket_id, user_id)
+);
+
+-- Enable RLS
+ALTER TABLE ticket_reads ENABLE ROW LEVEL SECURITY;
+
+-- Ticket reads policies - UPDATED FOR CLERK_ID
+CREATE POLICY "Users can view their own read timestamps" ON ticket_reads
+    FOR SELECT USING (user_id = auth.jwt() ->> 'sub');
+
+CREATE POLICY "Users can insert their own read timestamps" ON ticket_reads
+    FOR INSERT WITH CHECK (
+        user_id = auth.jwt() ->> 'sub'
+        AND EXISTS (
+            SELECT 1 FROM tickets
+            WHERE tickets.id = ticket_reads.ticket_id
+            AND (
+                tickets.client_id = auth.jwt() ->> 'sub' OR
+                tickets.assigned_to = auth.jwt() ->> 'sub' OR
+                is_staff(auth.jwt() ->> 'sub')
+            )
+        )
+    );
+
+CREATE POLICY "Users can update their own read timestamps" ON ticket_reads
+    FOR UPDATE USING (user_id = auth.jwt() ->> 'sub');
 
 -- Real-time Subscriptions
 
@@ -317,16 +362,18 @@ DROP POLICY IF EXISTS "Users can update their own data" ON users;
 DROP POLICY IF EXISTS "Admins can view all users" ON users;
 DROP POLICY IF EXISTS "Admins can update all users" ON users;
 
--- For development/testing: Allow anonymous access to users table
--- In production, this should be restricted
-CREATE POLICY "Allow anonymous read access to users" ON users
-    FOR SELECT USING (true);
+-- Recreate policies with active checks
+CREATE POLICY "Users can view their own data" ON users
+    FOR SELECT USING (auth.jwt() ->> 'sub' = clerk_id AND active = true);
 
-CREATE POLICY "Allow anonymous insert to users" ON users
-    FOR INSERT WITH CHECK (true);
+CREATE POLICY "Users can update their own data" ON users
+    FOR UPDATE USING (auth.jwt() ->> 'sub' = clerk_id AND active = true);
 
-CREATE POLICY "Allow anonymous update to users" ON users
-    FOR UPDATE USING (true);
+CREATE POLICY "Admins can view all users" ON users
+    FOR SELECT USING (is_admin(auth.jwt() ->> 'sub'));
+
+CREATE POLICY "Admins can update all users" ON users
+    FOR UPDATE USING (is_admin(auth.jwt() ->> 'sub'));
 
 -- Update tickets policies
 DROP POLICY IF EXISTS "Clients can view their own tickets" ON tickets;
