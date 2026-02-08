@@ -3117,6 +3117,12 @@ input:checked + .slider:before {
     max-width: 600px;
 }
 
+/* Ticket Details Modal - Large Size */
+#ticketDetailsModal .modal-content {
+    max-width: 1400px !important;
+    width: 95% !important;
+}
+
 .large-modal .modal-content {
     max-width: 900px;
 }

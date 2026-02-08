@@ -2319,7 +2319,7 @@ function initializeAdminFilters() {
             moderatorFilter.innerHTML = '<option value="all">Tous les modérateurs</option>';
             moderators.forEach(moderator => {
                 const option = document.createElement('option');
-                option.value = moderator.id; // Use database ID instead of clerk_id
+                option.value = moderator.clerk_id; // Use Clerk ID to match assigned_to field
                 option.textContent = moderator.name;
                 moderatorFilter.appendChild(option);
             });
@@ -2390,7 +2390,10 @@ async function loadTickets() {
             }
         } else if (currentUserRole === 'moderator') {
             // Moderators should see: tickets assigned to them OR open tickets (unassigned)
-            console.log('🎫 Filtering for moderator:', currentUser.id);
+            console.log('🎫 Filtering for moderator:', currentUserDbId);
+            console.log('🎫 Current user role:', currentUserRole);
+            console.log('🎫 Current user ID (Clerk):', currentUser.id);
+            console.log('🎫 Current user DB ID:', currentUserDbId);
 
             // First, get tickets assigned to this moderator
             const assignedQuery = supabaseClient.from('tickets').select(`
@@ -2422,6 +2425,9 @@ async function loadTickets() {
                 openQuery
             ]);
 
+            console.log('🎫 Assigned query result:', assignedResult);
+            console.log('🎫 Open query result:', openResult);
+
             if (assignedResult.error) {
                 console.error('🎫 Error loading assigned tickets:', assignedResult.error);
             }
@@ -2434,12 +2440,16 @@ async function loadTickets() {
             const openTickets = openResult.data || [];
             const allTickets = [...assignedTickets, ...openTickets];
 
+            console.log('🎫 Assigned tickets count:', assignedTickets.length);
+            console.log('🎫 Open tickets count:', openTickets.length);
+            console.log('🎫 Combined tickets count:', allTickets.length);
+
             // Remove duplicates (in case a ticket is both assigned to moderator and open)
             const uniqueTickets = allTickets.filter((ticket, index, self) =>
                 index === self.findIndex(t => t.id === ticket.id)
             );
 
-            console.log('🎫 Moderator tickets - assigned:', assignedTickets.length, 'open:', openTickets.length, 'total unique:', uniqueTickets.length);
+            console.log('🎫 Unique tickets count:', uniqueTickets.length);
 
             // Sort by creation date (newest first)
             uniqueTickets.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
@@ -2450,7 +2460,7 @@ async function loadTickets() {
             // Calculate unread counts for moderator tickets
             if (tickets) {
                 const unreadResults = await Promise.allSettled(
-                    tickets.map(ticket => getUnreadMessageCount(ticket.id, currentUser.id))
+                    tickets.map(ticket => getUnreadMessageCount(ticket.id, currentUserDbId))
                 );
                 tickets.forEach((ticket, index) => {
                     ticket.unreadCount = unreadResults[index].status === 'fulfilled' ? unreadResults[index].value : 0;
@@ -2674,6 +2684,11 @@ function createTicketCard(ticket) {
                         </button>`;
         }
 
+        // Details button for staff
+        actionsHtml += `<button class="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center action-btn" data-action="details" data-ticket-id="${ticket.id}">
+                        <span class="material-icons-round text-sm mr-2">info</span>Détails du ticket
+                    </button>`;
+
         // Delete button (admin only) with separator
         if (currentUserRole === 'admin') {
             actionsHtml += `<div class="border-t border-slate-200 dark:border-slate-700 my-1"></div>
@@ -2767,6 +2782,8 @@ function createTicketCard(ticket) {
                     await window.updateTicketStatus(ticketId, 'escalated');
                 } else if (action === 'delete') {
                     await window.deleteTicket(ticketId);
+                } else if (action === 'details') {
+                    await window.showTicketDetails(ticketId);
                 }
 
                 toggleActionsMenu(actionsMenuId);
@@ -3171,7 +3188,7 @@ async function openTicketChat(ticketId) {
 
         // Mark messages as read immediately when opening chat for all users
         // Don't pass timestamp - always query for the absolute latest to avoid missing messages
-        await markMessagesAsRead(ticketId, currentUser.id);
+        await markMessagesAsRead(ticketId, currentUserDbId);
 
         // Show modal
         openModal('chat-modal');
@@ -3756,6 +3773,12 @@ async function markMessagesAsRead(ticketId, userId, providedTimestamp = null) {
         // Update the unread count in the ticket list (if visible)
         // Pass 0 as the count since we just marked everything as read
         await updateTicketUnreadIndicator(ticketId, 0);
+
+        // Refresh the ticket list to ensure unread indicators are updated across all tickets
+        // This is necessary because the real-time subscription only listens to ticket table changes,
+        // not ticket_reads table changes
+        console.log('🔄 Refreshing ticket list after marking messages as read');
+        await loadTickets();
     } catch (error) {
         console.error('Error in markMessagesAsRead:', error);
     } finally {
@@ -3812,7 +3835,7 @@ async function updateTicketUnreadIndicator(ticketId, knownUnreadCount = null) {
 
         // Get the current unread count for this ticket
         // If knownUnreadCount is provided, use it (avoids race condition)
-        const unreadCount = knownUnreadCount !== null ? knownUnreadCount : await getUnreadMessageCount(ticketId, currentUser.id);
+        const unreadCount = knownUnreadCount !== null ? knownUnreadCount : await getUnreadMessageCount(ticketId, currentUserDbId);
         console.log('🔄 Unread count for indicator update:', unreadCount);
 
         // Find the ticket row in the DOM
@@ -4158,7 +4181,7 @@ async function handleFileUpload(files) {
             // Generate unique file path: userId/ticketId/timestamp-filename
             const timestamp = Date.now();
             const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-            const filePath = `${currentUser.id}/${currentTicketId}/${timestamp}-${sanitizedFileName}`;
+            const filePath = `${currentUserDbId}/${currentTicketId}/${timestamp}-${sanitizedFileName}`;
 
             // Upload file to Supabase Storage
             const { data: uploadData, error: uploadError } = await supabaseClient.storage
@@ -4306,7 +4329,7 @@ function subscribeToTicketUpdates() {
             table: 'messages'
         }, async (payload) => {
             console.log('💬 Global message notification:', payload.new);
-            console.log('💬 Message sender:', payload.new.sender_id, 'Current user:', currentUserDbId);
+            console.log('💬 Message sender:', payload.new.sender_id, 'Current user DB ID:', currentUserDbId);
 
             // Check if this message is for a ticket the current user has access to
             const hasAccess = await checkIfUserHasAccessToTicket(payload.new.ticket_id);
@@ -4322,6 +4345,20 @@ function subscribeToTicketUpdates() {
                 await updateTicketUnreadIndicator(payload.new.ticket_id);
             } else {
                 console.log('⏭️ Skipping notification - either no access or own message');
+            }
+        })
+        .on('postgres_changes', {
+            event: '*', // Listen to INSERT, UPDATE, DELETE on ticket_reads
+            schema: 'public',
+            table: 'ticket_reads'
+        }, async (payload) => {
+            console.log('📖 Real-time ticket_reads update:', payload.eventType, payload.new || payload.old);
+            
+            // When ticket_reads table changes, update the unread indicator for the affected ticket
+            const ticketId = payload.new?.ticket_id || payload.old?.ticket_id;
+            if (ticketId) {
+                console.log('📖 Updating unread indicator for ticket:', ticketId, 'due to ticket_reads change');
+                await updateTicketUnreadIndicator(ticketId);
             }
         })
         .subscribe();
@@ -4359,7 +4396,7 @@ function subscribeToTicketMessages(ticketId) {
                         window.isMarkingRead = true;
                         console.log('📖 User is at bottom after new message, marking messages as read');
                         try {
-                            await markMessagesAsRead(ticketId, currentUser.id);
+                            await markMessagesAsRead(ticketId, currentUserDbId);
                         } finally {
                             window.isMarkingRead = false;
                         }
@@ -4388,7 +4425,7 @@ function checkIfTicketAffectsCurrentUser(payload) {
 
     if (currentUserRole === 'client') {
         // Clients only care about their own tickets
-        return ticket.client_id === currentUserDbId;
+        return ticket.client_id === currentUser.id;
     } else if (currentUserRole === 'moderator') {
         // Moderators care about:
         // - Tickets assigned to them
@@ -4410,7 +4447,7 @@ function checkIfTicketAffectsCurrentUser(payload) {
             return ticket.assigned_to === currentUser.id;
         } else if (payload.eventType === 'DELETE') {
             // If a ticket assigned to this moderator was deleted
-            return ticket.assigned_to === currentUser.id;
+            return ticket.assigned_to === currentUserDbId;
         }
     } else if (currentUserRole === 'admin') {
         // Admins care about all ticket changes
@@ -4436,7 +4473,7 @@ async function checkIfUserHasAccessToTicket(ticketId) {
                 .single();
 
             if (!error && ticket) {
-                hasAccess = ticket.client_id === currentUserDbId;
+                hasAccess = ticket.client_id === currentUser.id;
             }
         } else if (currentUserRole === 'moderator') {
             // Moderators have access to tickets assigned to them or open tickets
@@ -4935,7 +4972,7 @@ async function loadAllModerators() {
         console.log('👥 Loading all moderators...');
         const { data: moderators, error } = await supabaseClient
             .from('users')
-            .select('id, name, available') // Use database ID instead of clerk_id
+            .select('clerk_id, name, available') // Use clerk_id for consistency with assigned_to field
             .eq('role', 'moderator')
             .order('name');
 
@@ -4958,7 +4995,7 @@ async function loadAvailableModerators() {
         console.log('👥 Loading available moderators...');
         const { data: moderators, error } = await supabaseClient
             .from('users')
-            .select('id, name, available') // Use database ID instead of clerk_id
+            .select('clerk_id, name, available') // Use clerk_id for ticket assignment queries
             .eq('role', 'moderator')
             .eq('available', true)
             .order('name');
@@ -4999,7 +5036,7 @@ async function findAvailableModerator() {
             const { data: assignedTickets, error } = await supabaseClient
                 .from('tickets')
                 .select('id', { count: 'exact' })
-                .eq('assigned_to', moderator.id) // Use database ID instead of clerk_id
+                .eq('assigned_to', moderator.clerk_id) // Use clerk_id to match assigned_to field
                 .eq('status', 'in-progress');
             
             if (error) {
@@ -5649,6 +5686,36 @@ function initializeModalHandlers() {
         fileUploadBtn.setAttribute('data-listener-attached', 'true');
     }
 
+    // Internal notes functionality
+    const internalNoteInput = document.getElementById('internalNoteInput');
+    const addInternalNoteBtn = document.getElementById('addInternalNoteBtn');
+
+    if (internalNoteInput && !internalNoteInput.hasAttribute('data-listener-attached')) {
+        internalNoteInput.addEventListener('input', function() {
+            updateNoteCharCounter();
+        });
+
+        internalNoteInput.addEventListener('change', function() {
+            updateNoteCharCounter();
+        });
+
+        internalNoteInput.setAttribute('data-listener-attached', 'true');
+    }
+
+    if (addInternalNoteBtn && !addInternalNoteBtn.hasAttribute('data-listener-attached')) {
+        addInternalNoteBtn.addEventListener('click', async function() {
+            // Get the ticket ID from the modal context (we need to store it when opening the modal)
+            const ticketId = this.getAttribute('data-ticket-id');
+            if (ticketId) {
+                await addInternalNote(ticketId);
+            } else {
+                showNotification('Erreur: ID du ticket manquant', 'error');
+            }
+        });
+
+        addInternalNoteBtn.setAttribute('data-listener-attached', 'true');
+    }
+
     // Mark as initialized
     window.modalHandlersInitialized = true;
     console.log('✅ Modal handlers initialized');
@@ -5778,7 +5845,7 @@ function toggleActionsMenu(menuId) {
 
                         moderators.forEach(moderator => {
                             const option = document.createElement('option');
-                            option.value = moderator.id; // Use database ID instead of clerk_id
+                            option.value = moderator.clerk_id; // Use Clerk ID to match assigned_to field
                             option.textContent = moderator.name || 'Modérateur';
                             assignSelect.appendChild(option);
                         });
@@ -6413,6 +6480,7 @@ window.reactivateUser = reactivateUser;
 window.toggleActionsMenu = toggleActionsMenu;
 window.openModal = openModal;
 window.closeModal = closeModal;
+window.showTicketDetails = showTicketDetails;
 
 // Initialize the application after all functions are exported
 async function initializeApp() {
@@ -6625,6 +6693,288 @@ function initializeChatModalFeatures() {
     
     console.log('✅ Chat modal drag and resize features initialized');
 }
+
+// ===================================================================
+// INTERNAL NOTES FUNCTIONS
+// ===================================================================
+
+// Show ticket details modal with internal notes for staff
+async function showTicketDetails(ticketId) {
+    try {
+        console.log('📋 Showing ticket details for:', ticketId);
+
+        // Get ticket details
+        const { data: ticket, error } = await supabaseClient
+            .from('tickets')
+            .select(`
+                *,
+                messages (
+                    id,
+                    content,
+                    sender_type,
+                    sender_name,
+                    sender_avatar,
+                    created_at,
+                    file_url,
+                    file_name,
+                    file_type,
+                    file_size
+                )
+            `)
+            .eq('id', ticketId)
+            .single();
+
+        if (error) throw error;
+
+        // Update modal title
+        document.getElementById('ticketDetailsTitle').textContent = `Ticket #${ticket.id.substring(0, 8)}`;
+
+        // Populate ticket details
+        const detailsContent = document.getElementById('ticketDetailsContent');
+        const createdDate = new Date(ticket.created_at).toLocaleString('fr-FR');
+        const lastActivity = ticket.messages?.length > 0
+            ? new Date(ticket.messages[ticket.messages.length - 1].created_at).toLocaleString('fr-FR')
+            : 'Aucune activité';
+
+        detailsContent.innerHTML = `
+            <div class="space-y-6">
+                <!-- Ticket Info -->
+                <div class="bg-slate-50 dark:bg-slate-700 rounded-lg p-4">
+                    <h4 class="font-semibold text-slate-800 dark:text-white mb-3">Informations du ticket</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                        <div>
+                            <span class="font-medium text-slate-600 dark:text-slate-300">Sujet:</span>
+                            <p class="text-slate-800 dark:text-white mt-1">${escapeHtml(ticket.title)}</p>
+                        </div>
+                        <div>
+                            <span class="font-medium text-slate-600 dark:text-slate-300">Statut:</span>
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                ticket.status === 'open' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
+                                ticket.status === 'in-progress' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200' :
+                                ticket.status === 'closed' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                                'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                            } mt-1">
+                                ${ticket.status === 'in-progress' ? 'En cours' : ticket.status === 'escalated' ? 'Escaladé' : ticket.status}
+                            </span>
+                        </div>
+                        <div>
+                            <span class="font-medium text-slate-600 dark:text-slate-300">Créé le:</span>
+                            <p class="text-slate-800 dark:text-white mt-1">${createdDate}</p>
+                        </div>
+                        <div>
+                            <span class="font-medium text-slate-600 dark:text-slate-300">Dernière activité:</span>
+                            <p class="text-slate-800 dark:text-white mt-1">${lastActivity}</p>
+                        </div>
+                        ${currentUserRole === 'admin' ? `
+                        <div>
+                            <span class="font-medium text-slate-600 dark:text-slate-300">Client:</span>
+                            <p class="text-slate-800 dark:text-white mt-1">${escapeHtml(ticket.client_name || 'Inconnu')}</p>
+                        </div>
+                        <div>
+                            <span class="font-medium text-slate-600 dark:text-slate-300">Assigné à:</span>
+                            <p class="text-slate-800 dark:text-white mt-1">${escapeHtml(ticket.assigned_to_name || 'Non assigné')}</p>
+                        </div>
+                        ` : ''}
+                    </div>
+                </div>
+
+                <!-- Messages -->
+                <div>
+                    <h4 class="font-semibold text-slate-800 dark:text-white mb-3">Messages (${ticket.messages?.length || 0})</h4>
+                    <div class="space-y-3 max-h-96 overflow-y-auto">
+                        ${ticket.messages?.length > 0
+                            ? ticket.messages.map(msg => `
+                                <div class="bg-white dark:bg-slate-700 rounded-lg p-3 border border-slate-200 dark:border-slate-600">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <div class="flex items-center space-x-2">
+                                            <span class="font-medium text-slate-800 dark:text-white">${escapeHtml(msg.sender_name)}</span>
+                                            <span class="px-2 py-0.5 text-xs rounded-full ${
+                                                msg.sender_type === 'client' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
+                                                msg.sender_type === 'moderator' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200' :
+                                                'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                                            }">${msg.sender_type === 'client' ? 'Client' : msg.sender_type === 'moderator' ? 'Modérateur' : 'Admin'}</span>
+                                        </div>
+                                        <span class="text-xs text-slate-500 dark:text-slate-400">${new Date(msg.created_at).toLocaleString('fr-FR')}</span>
+                                    </div>
+                                    <p class="text-slate-700 dark:text-slate-300 text-sm whitespace-pre-wrap">${escapeHtml(msg.content)}</p>
+                                    ${msg.file_url ? `
+                                        <div class="mt-2 pt-2 border-t border-slate-200 dark:border-slate-600">
+                                            <a href="${msg.file_url}" target="_blank" class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm flex items-center">
+                                                <span class="material-icons-round text-sm mr-1">attach_file</span>
+                                                ${escapeHtml(msg.file_name || 'Fichier joint')}
+                                            </a>
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            `).join('')
+                            : '<p class="text-slate-500 dark:text-slate-400 text-center py-8">Aucun message dans ce ticket.</p>'
+                        }
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Show internal notes section for staff only
+        const notesSection = document.getElementById('internalNotesSection');
+        if (currentUserRole === 'moderator' || currentUserRole === 'admin') {
+            notesSection.style.display = 'block';
+            await loadInternalNotes(ticketId);
+            
+            // Set ticket ID on the add button for the click handler
+            const addBtn = document.getElementById('addInternalNoteBtn');
+            if (addBtn) {
+                addBtn.setAttribute('data-ticket-id', ticketId);
+            }
+
+            // Auto-scroll to make the notes section visible
+            setTimeout(() => {
+                const modal = document.getElementById('ticketDetailsModal');
+                if (modal) {
+                    modal.scrollTop = modal.scrollHeight;
+                }
+            }, 100);
+        } else {
+            notesSection.style.display = 'none';
+        }
+
+        // Show modal
+        openModal('ticketDetailsModal');
+
+    } catch (error) {
+        console.error('Error showing ticket details:', error);
+        showNotification('Erreur lors du chargement des détails du ticket', 'error');
+    }
+}
+
+// Load internal notes for a ticket
+async function loadInternalNotes(ticketId) {
+    try {
+        console.log('📝 Loading internal notes for ticket:', ticketId);
+
+        const { data: notes, error } = await supabaseClient
+            .from('internal_notes')
+            .select('*')
+            .eq('ticket_id', ticketId)
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        const notesList = document.getElementById('internalNotesList');
+
+        if (!notes || notes.length === 0) {
+            notesList.innerHTML = `
+                <div class="text-center text-slate-500 dark:text-slate-400 py-8">
+                    <p class="text-sm">Aucune note interne</p>
+                </div>
+            `;
+            return;
+        }
+
+        notesList.innerHTML = notes.map(note => `
+            <div class="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-600 p-4 mb-3" data-note-id="${note.id}">
+                <div class="flex items-start justify-between mb-2">
+                    <div class="flex items-center space-x-2">
+                        <span class="text-xs font-medium text-slate-600 dark:text-slate-400">${escapeHtml(note.author_name)}</span>
+                        <span class="text-xs text-slate-500 dark:text-slate-500">•</span>
+                        <span class="text-xs text-slate-500 dark:text-slate-500">${new Date(note.created_at).toLocaleString('fr-FR')}</span>
+                    </div>
+                </div>
+                <div class="note-content mb-3">
+                    <p class="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap">${escapeHtml(note.content)}</p>
+                </div>
+                <div class="note-actions flex items-center">
+                    <button onclick="editInternalNote('${note.id}', '${escapeHtml(note.content).replace(/'/g, "\\'").replace(/"/g, '\\"')}')" class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 text-sm font-medium mr-2">
+                        <span class="material-icons-round text-sm mr-1">edit</span>
+                        Modifier
+                    </button>
+                    <button onclick="deleteInternalNote('${note.id}')" class="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 text-sm font-medium">
+                        <span class="material-icons-round text-sm mr-1">delete</span>
+                        Supprimer
+                    </button>
+                </div>
+            </div>
+        `).join('');
+
+    } catch (error) {
+        console.error('Error loading internal notes:', error);
+        const notesList = document.getElementById('internalNotesList');
+        notesList.innerHTML = `
+            <div class="text-center text-red-500 dark:text-red-400 py-8">
+                <p class="text-sm">Erreur lors du chargement des notes</p>
+            </div>
+        `;
+    }
+}
+
+// Add internal note to a ticket
+async function addInternalNote(ticketId) {
+    const noteInput = document.getElementById('internalNoteInput');
+    const content = noteInput.value.trim();
+
+    if (!content) {
+        showNotification('Veuillez saisir une note', 'error');
+        return;
+    }
+
+    if (content.length > 500) {
+        showNotification('La note est trop longue (maximum 500 caractères)', 'error');
+        return;
+    }
+
+    try {
+        console.log('📝 Adding internal note to ticket:', ticketId);
+
+        // Use server-side endpoint for creating internal notes
+        await callSecureEndpoint('create-internal-note', {
+            ticketId,
+            content
+        });
+
+        // Clear input and reload notes
+        noteInput.value = '';
+        updateNoteCharCounter();
+        await loadInternalNotes(ticketId);
+
+        showNotification('Note interne ajoutée', 'success');
+
+    } catch (error) {
+        console.error('Error adding internal note:', error);
+        showNotification('Erreur lors de l\'ajout de la note', 'error');
+    }
+}
+
+// Update character counter for internal note input
+function updateNoteCharCounter() {
+    const noteInput = document.getElementById('internalNoteInput');
+    const charCounter = document.getElementById('noteCharCounter');
+    const maxLength = 500;
+
+    if (!noteInput || !charCounter) return;
+
+    const currentLength = noteInput.value.length;
+    charCounter.textContent = `${currentLength}/${maxLength}`;
+
+    // Update styling based on character count
+    charCounter.classList.remove('text-orange-500', 'text-red-500');
+
+    if (currentLength > maxLength * 0.8) {
+        charCounter.classList.add('text-orange-500');
+    }
+
+    if (currentLength > maxLength) {
+        charCounter.classList.add('text-red-500');
+    }
+
+    // Disable add button if over limit
+    const addBtn = document.getElementById('addInternalNoteBtn');
+    if (addBtn) {
+        addBtn.disabled = currentLength > maxLength || currentLength === 0;
+    }
+}
+
+// ===================================================================
+// APP INITIALIZATION
+// ===================================================================
 
 // Call initializeApp when the script loads
 initializeApp();
