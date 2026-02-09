@@ -3193,6 +3193,9 @@ async function openTicketChat(ticketId) {
         // Show modal
         openModal('chat-modal');
 
+        // Initialize typing indicators for this chat session
+        initializeTypingIndicators(ticketId);
+
         // Mark messages as read when user scrolls to bottom
         initializeReadTracking(ticketId);
     } catch (error) {
@@ -4003,44 +4006,118 @@ async function getUnreadMessageCount(ticketId, userId) {
     }
 }
 
-// Show typing indicator
-function showTypingIndicator() {
-    const messagesContainer = document.getElementById('chat-messages');
-    if (!messagesContainer) return;
+// Typing indicator variables
+let typingTimeout = null;
+let isTyping = false;
+let typingChannel = null;
 
-    // Remove existing typing indicator
-    const existingTyping = messagesContainer.querySelector('.typing-indicator');
-    if (existingTyping) return;
+// Start typing indicator
+function startTyping() {
+    if (isTyping || !currentTicketId) return;
 
-    const typingDiv = document.createElement('div');
-    typingDiv.className = 'message-bubble other typing-indicator';
+    isTyping = true;
+    console.log('⌨️ Started typing in ticket:', currentTicketId);
 
-    // Get role config for the typing indicator (assuming it's from staff)
-    const roleConfig = getRoleConfig('moderator'); // Default to moderator for typing indicator
+    // Broadcast typing status to other users
+    broadcastTypingStatus(true);
 
-    typingDiv.innerHTML = `
-        <div class="flex flex-col space-y-1">
-            <div class="flex items-center space-x-2">
-                <span class="text-xs font-medium text-gray-600">${roleConfig.label}</span>
-                <span class="px-2 py-0.5 text-xs rounded-full ${roleConfig.badgeClass}">${roleConfig.label}</span>
-            </div>
-            <div class="flex items-end space-x-2">
-                <div class="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0">
-                    <span class="text-sm">🛡️</span>
-                </div>
-                <div class="bg-gray-100 px-4 py-2 rounded-2xl rounded-bl-md max-w-md">
-                    <div class="typing-dots">
-                        <span></span>
-                        <span></span>
-                        <span></span>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
+    // Clear any existing timeout
+    if (typingTimeout) {
+        clearTimeout(typingTimeout);
+    }
 
-    messagesContainer.appendChild(typingDiv);
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    // Set timeout to stop typing after 3 seconds of inactivity
+    typingTimeout = setTimeout(() => {
+        stopTyping();
+    }, 3000);
+}
+
+// Stop typing indicator
+function stopTyping() {
+    if (!isTyping) return;
+
+    isTyping = false;
+    console.log('⌨️ Stopped typing in ticket:', currentTicketId);
+
+    // Broadcast typing status to other users
+    broadcastTypingStatus(false);
+
+    // Clear timeout
+    if (typingTimeout) {
+        clearTimeout(typingTimeout);
+        typingTimeout = null;
+    }
+}
+
+// Broadcast typing status to other users
+function broadcastTypingStatus(typing) {
+    if (!currentTicketId || !supabaseClient) return;
+
+    console.log('📡 Broadcasting typing status:', typing, 'for ticket:', currentTicketId);
+
+    try {
+        // Use Supabase presence for typing indicators
+        if (!typingChannel) {
+            console.log('📡 Creating new typing channel for ticket:', currentTicketId);
+            typingChannel = supabaseClient.channel(`typing-${currentTicketId}`);
+        }
+
+        if (typing) {
+            console.log('📡 Sending typing event');
+            // Broadcast that we're typing
+            typingChannel.send({
+                type: 'broadcast',
+                event: 'typing',
+                payload: {
+                    user_id: currentUserDbId,
+                    user_name: currentUser.fullName || currentUser.username || 'Utilisateur',
+                    user_role: currentUserRole,
+                    user_image: currentUser.imageUrl || null,
+                    ticket_id: currentTicketId
+                }
+            });
+        } else {
+            console.log('📡 Sending stop_typing event');
+            // Broadcast that we stopped typing
+            typingChannel.send({
+                type: 'broadcast',
+                event: 'stop_typing',
+                payload: {
+                    user_id: currentUserDbId,
+                    ticket_id: currentTicketId
+                }
+            });
+        }
+    } catch (error) {
+        console.error('Error broadcasting typing status:', error);
+    }
+}
+
+// Subscribe to typing indicators for a ticket
+function subscribeToTypingIndicators(ticketId) {
+    if (!supabaseClient) return;
+
+    // Unsubscribe from previous typing channel
+    if (typingChannel) {
+        supabaseClient.removeChannel(typingChannel);
+    }
+
+    typingChannel = supabaseClient.channel(`typing-${ticketId}`)
+        .on('broadcast', { event: 'typing' }, (payload) => {
+            console.log('⌨️ Received typing event:', payload);
+            if (payload.payload.user_id !== currentUserDbId) {
+                showTypingIndicatorForUser(payload.payload);
+            }
+        })
+        .on('broadcast', { event: 'stop_typing' }, (payload) => {
+            console.log('⌨️ Received stop typing event:', payload);
+            if (payload.payload.user_id !== currentUserDbId) {
+                hideTypingIndicatorForUser(payload.payload.user_id);
+            }
+        })
+        .subscribe();
+
+    console.log('✅ Subscribed to typing indicators for ticket:', ticketId);
 }
 
 // Hide typing indicator
@@ -4052,6 +4129,144 @@ function hideTypingIndicator() {
     if (typingIndicator) {
         typingIndicator.remove();
     }
+}
+
+// Show typing indicator for a specific user
+function showTypingIndicatorForUser(userData) {
+    const messagesContainer = document.getElementById('chat-messages');
+    if (!messagesContainer) return;
+
+    // Remove existing typing indicator for this user
+    const existingTyping = messagesContainer.querySelector(`.typing-indicator[data-user-id="${userData.user_id}"]`);
+    if (existingTyping) return;
+
+    const typingDiv = document.createElement('div');
+    typingDiv.className = 'message-bubble other typing-indicator';
+    typingDiv.setAttribute('data-user-id', userData.user_id);
+
+    // Get role config for the typing indicator
+    const roleConfig = getRoleConfig(userData.user_role);
+
+    // Get user avatar or fallback
+    let avatarHtml = '';
+    if (userData.user_image) {
+        avatarHtml = `<img src="${userData.user_image}" alt="Avatar" class="w-10 h-10 rounded-full object-cover">`;
+    } else {
+        const userInitials = (userData.user_name || 'U').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+        avatarHtml = `<div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white font-bold">${userInitials}</div>`;
+    }
+
+    typingDiv.innerHTML = `
+        <div class="flex flex-col space-y-1">
+            <div class="flex items-center space-x-2">
+                <span class="text-xs font-medium text-gray-600">${userData.user_name}</span>
+                <span class="px-2 py-0.5 text-xs rounded-full ${roleConfig.badgeClass}">${roleConfig.label}</span>
+            </div>
+            <div class="flex items-end space-x-2">
+                <div class="w-10 h-10 rounded-full overflow-hidden bg-gray-200 flex items-center justify-center flex-shrink-0">
+                    ${avatarHtml}
+                </div>
+                <div class="bg-gray-100 px-4 py-2 rounded-2xl rounded-bl-md max-w-md">
+                    <div class="typing-dots">
+                        <span class="animate-bounce"></span>
+                        <span class="animate-bounce"></span>
+                        <span class="animate-bounce"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    messagesContainer.appendChild(typingDiv);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+    // Auto-hide typing indicator after 5 seconds (in case stop_typing event is missed)
+    setTimeout(() => {
+        hideTypingIndicatorForUser(userData.user_id);
+    }, 5000);
+}
+
+// Hide typing indicator for a specific user
+function hideTypingIndicatorForUser(userId) {
+    const messagesContainer = document.getElementById('chat-messages');
+    if (!messagesContainer) return;
+
+    const typingIndicator = messagesContainer.querySelector(`.typing-indicator[data-user-id="${userId}"]`);
+    if (typingIndicator) {
+        typingIndicator.remove();
+    }
+}
+
+// Handle typing events from other participants
+function handleTypingEvent(event) {
+    console.log('⌨️ Received typing event:', event);
+
+    if (event.event === 'typing') {
+        console.log('⌨️ Showing typing indicator for user:', event.payload);
+        showTypingIndicatorForUser(event.payload);
+    } else if (event.event === 'stop_typing') {
+        console.log('⌨️ Hiding typing indicator for user:', event.payload.user_id);
+        hideTypingIndicatorForUser(event.payload.user_id);
+    }
+}
+
+// Initialize typing indicators for a chat session
+function initializeTypingIndicators(ticketId) {
+    console.log('⌨️ Initializing typing indicators for ticket:', ticketId);
+
+    // Create typing channel for this ticket
+    typingChannel = supabaseClient.channel(`typing-${ticketId}`, {
+        config: {
+            presence: {
+                key: currentUser.id
+            }
+        }
+    });
+
+    console.log('⌨️ Created typing channel, subscribing to events');
+
+    // Listen for typing events
+    typingChannel
+        .on('broadcast', { event: 'typing' }, handleTypingEvent)
+        .on('broadcast', { event: 'stop_typing' }, handleTypingEvent)
+        .subscribe();
+
+    console.log('⌨️ Subscribed to typing events');
+
+    // Add input event listeners to message input
+    const messageInput = document.getElementById('messageInput');
+    if (messageInput) {
+        console.log('⌨️ Found message input, adding event listeners');
+        messageInput.addEventListener('input', (e) => {
+            if (e.target.value.trim().length > 0) {
+                startTyping();
+            } else {
+                stopTyping();
+            }
+        });
+
+        messageInput.addEventListener('keydown', (e) => {
+            // Stop typing when Enter is pressed (message sent)
+            if (e.key === 'Enter' && !e.shiftKey) {
+                stopTyping();
+            }
+        });
+    } else {
+        console.log('⌨️ Message input not found!');
+    }
+}
+
+// Cleanup typing indicators when closing chat
+function cleanupTypingIndicators() {
+    stopTyping();
+
+    if (typingChannel) {
+        typingChannel.unsubscribe();
+        typingChannel = null;
+    }
+
+    // Hide any remaining typing indicators
+    hideTypingIndicator();
 }
 
 // Show message details on hover/click
@@ -4405,7 +4620,7 @@ function subscribeToTicketMessages(ticketId) {
             }
 
             // Hide typing indicator if it was showing
-            hideTypingIndicator();
+            hideTypingIndicatorForUser(payload.new.sender_id);
 
             // Show notification and play sound for new messages from other users
             const isFromOtherUser = payload.new.sender_id !== currentUserDbId;
@@ -5798,6 +6013,11 @@ function closeModal(modalId) {
                 delete messagesContainer._markAsReadListener;
             }
         }
+
+        // Clean up typing indicators when closing chat modal
+        if (modalId === 'chat-modal') {
+            cleanupTypingIndicators();
+        }
     }
 }
 
@@ -6980,8 +7200,11 @@ function updateNoteCharCounter() {
 initializeApp();
 
 // Initialize chat modal features after DOM is ready
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initializeChatModalFeatures);
-} else {
-    initializeChatModalFeatures();
+function initializeChatModalFeatures() {
+    console.log('🔧 Initializing chat modal features...');
+    
+    // Add any chat modal specific initialization here
+    // For now, this is just a placeholder to prevent errors
+    
+    console.log('✅ Chat modal features initialized');
 }

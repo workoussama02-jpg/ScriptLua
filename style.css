@@ -3592,7 +3592,17 @@ input:checked + .slider:before {
     gap: 0.5rem;
 }
 
-.typing-indicator .animate-bounce {
+.typing-dots {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.typing-dots span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: #9ca3af;
     animation: bounce 1.4s infinite ease-in-out both;
 }
 
