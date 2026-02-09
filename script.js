@@ -5973,6 +5973,9 @@ function openModal(modalId) {
                 modalContent.style.flexShrink = '0';
                 console.log('🔧 Applied chat modal dimensions:', dimensions);
             }
+            
+            // Initialize chat modal features (drag, resize, etc.)
+            initializeChatModalFeatures();
         }
         
         console.log('🔧 Modal opened successfully');
@@ -6745,175 +6748,6 @@ async function initializeApp() {
     }
 }
 
-// Chat modal drag and resize functionality
-function initializeChatModalFeatures() {
-    const modal = document.getElementById('chat-modal');
-    const modalContent = document.getElementById('chatModalContent');
-    const header = document.getElementById('chatModalHeader');
-    const sizeButtons = document.querySelectorAll('.chat-size-btn');
-    
-    if (!modal || !modalContent || !header) {
-        console.log('⚠️ Chat modal elements not found, skipping drag/resize initialization');
-        return;
-    }
-    
-    // Load saved preferences
-    const savedSize = localStorage.getItem('chatModalSize') || 'medium';
-    const savedPosition = JSON.parse(localStorage.getItem('chatModalPosition') || '{"x": 0, "y": 0}');
-    
-    // Define exact dimensions for each size
-    const sizes = {
-        small: { width: '560px', height: '580px' },
-        medium: { width: '950px', height: '870px' },
-        large: { width: '1500px', height: '870px' }
-    };
-    
-    // Apply saved size
-    modalContent.classList.remove('chat-size-small', 'chat-size-medium', 'chat-size-large');
-    modalContent.classList.add(`chat-size-${savedSize}`);
-    
-    // Force dimensions with inline styles
-    const savedDimensions = sizes[savedSize];
-    modalContent.style.width = savedDimensions.width;
-    modalContent.style.height = savedDimensions.height;
-    modalContent.style.minWidth = savedDimensions.width;
-    modalContent.style.minHeight = savedDimensions.height;
-    modalContent.style.maxWidth = '90vw';
-    modalContent.style.maxHeight = '85vh';
-    modalContent.style.display = 'flex';
-    modalContent.style.flexDirection = 'column';
-    modalContent.style.flexGrow = '0';
-    modalContent.style.flexShrink = '0';
-    
-    sizeButtons.forEach(btn => {
-        if (btn.dataset.size === savedSize) {
-            btn.classList.add('bg-white/20');
-        } else {
-            btn.classList.remove('bg-white/20');
-        }
-    });
-    
-    // Size button handlers
-    sizeButtons.forEach(button => {
-        button.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const size = button.dataset.size;
-            
-            // Define exact dimensions for each size
-            const sizes = {
-                small: { width: '560px', height: '580px' },
-                medium: { width: '950px', height: '870px' },
-                large: { width: '1500px', height: '870px' }
-            };
-            
-            // Update button states
-            sizeButtons.forEach(btn => btn.classList.remove('bg-white/20'));
-            button.classList.add('bg-white/20');
-            
-            // Update modal size classes
-            modalContent.classList.remove('chat-size-small', 'chat-size-medium', 'chat-size-large');
-            modalContent.classList.add(`chat-size-${size}`);
-            
-            // Force dimensions with inline styles to override everything
-            const dimensions = sizes[size];
-            modalContent.style.width = dimensions.width;
-            modalContent.style.height = dimensions.height;
-            modalContent.style.minWidth = dimensions.width;
-            modalContent.style.minHeight = dimensions.height;
-            modalContent.style.maxWidth = '90vw';
-            modalContent.style.maxHeight = '85vh';
-            modalContent.style.display = 'flex';
-            modalContent.style.flexDirection = 'column';
-            modalContent.style.flexGrow = '0';
-            modalContent.style.flexShrink = '0';
-            
-            // Reset position to center when changing size
-            xOffset = 0;
-            yOffset = 0;
-            modalContent.style.transform = 'translate(0, 0)';
-            localStorage.setItem('chatModalPosition', JSON.stringify({ x: 0, y: 0 }));
-            
-            // Save size preference
-            localStorage.setItem('chatModalSize', size);
-            
-            // Debug logging
-            console.log(`📐 Chat modal size changed to: ${size}`);
-            console.log(`📏 Set dimensions: ${dimensions.width} x ${dimensions.height}`);
-            console.log(`📏 Current classes:`, modalContent.className);
-            console.log(`📏 Computed width:`, window.getComputedStyle(modalContent).width);
-            console.log(`📏 Computed height:`, window.getComputedStyle(modalContent).height);
-        });
-    });
-    
-    // Dragging functionality
-    let isDragging = false;
-    let currentX;
-    let currentY;
-    let initialX;
-    let initialY;
-    let xOffset = savedPosition.x;
-    let yOffset = savedPosition.y;
-    
-    // Apply saved position
-    if (xOffset !== 0 || yOffset !== 0) {
-        modalContent.style.transform = `translate(${xOffset}px, ${yOffset}px)`;
-    }
-    
-    header.addEventListener('mousedown', dragStart);
-    document.addEventListener('mousemove', drag);
-    document.addEventListener('mouseup', dragEnd);
-    
-    function dragStart(e) {
-        // Don't drag if clicking on buttons
-        if (e.target.closest('button')) return;
-        
-        initialX = e.clientX - xOffset;
-        initialY = e.clientY - yOffset;
-        isDragging = true;
-        header.classList.add('dragging');
-    }
-    
-    function drag(e) {
-        if (isDragging) {
-            e.preventDefault();
-            currentX = e.clientX - initialX;
-            currentY = e.clientY - initialY;
-            xOffset = currentX;
-            yOffset = currentY;
-            
-            modalContent.style.transform = `translate(${currentX}px, ${currentY}px)`;
-        }
-    }
-    
-    function dragEnd() {
-        if (isDragging) {
-            initialX = currentX;
-            initialY = currentY;
-            isDragging = false;
-            header.classList.remove('dragging');
-            
-            // Save position
-            localStorage.setItem('chatModalPosition', JSON.stringify({ x: xOffset, y: yOffset }));
-        }
-    }
-    
-    // Reset position when modal closes
-    const closeButton = document.getElementById('closeChatModal');
-    if (closeButton) {
-        closeButton.addEventListener('click', () => {
-            // Reset position after a short delay to allow close animation
-            setTimeout(() => {
-                xOffset = 0;
-                yOffset = 0;
-                modalContent.style.transform = 'translate(0, 0)';
-                localStorage.setItem('chatModalPosition', JSON.stringify({ x: 0, y: 0 }));
-            }, 300);
-        });
-    }
-    
-    console.log('✅ Chat modal drag and resize features initialized');
-}
-
 // ===================================================================
 // INTERNAL NOTES FUNCTIONS
 // ===================================================================
@@ -7201,10 +7035,169 @@ initializeApp();
 
 // Initialize chat modal features after DOM is ready
 function initializeChatModalFeatures() {
-    console.log('🔧 Initializing chat modal features...');
+    const modal = document.getElementById('chat-modal');
+    const modalContent = document.getElementById('chatModalContent');
+    const header = document.getElementById('chatModalHeader');
+    const sizeButtons = document.querySelectorAll('.chat-size-btn');
     
-    // Add any chat modal specific initialization here
-    // For now, this is just a placeholder to prevent errors
+    if (!modal || !modalContent || !header) {
+        console.log('⚠️ Chat modal elements not found, skipping drag/resize initialization');
+        return;
+    }
     
-    console.log('✅ Chat modal features initialized');
+    // Load saved preferences
+    const savedSize = localStorage.getItem('chatModalSize') || 'medium';
+    const savedPosition = JSON.parse(localStorage.getItem('chatModalPosition') || '{"x": 0, "y": 0}');
+    
+    // Define exact dimensions for each size
+    const sizes = {
+        small: { width: '560px', height: '580px' },
+        medium: { width: '950px', height: '870px' },
+        large: { width: '1500px', height: '870px' }
+    };
+    
+    // Apply saved size
+    modalContent.classList.remove('chat-size-small', 'chat-size-medium', 'chat-size-large');
+    modalContent.classList.add(`chat-size-${savedSize}`);
+    
+    // Force dimensions with inline styles
+    const savedDimensions = sizes[savedSize];
+    modalContent.style.width = savedDimensions.width;
+    modalContent.style.height = savedDimensions.height;
+    modalContent.style.minWidth = savedDimensions.width;
+    modalContent.style.minHeight = savedDimensions.height;
+    modalContent.style.maxWidth = '90vw';
+    modalContent.style.maxHeight = '85vh';
+    modalContent.style.display = 'flex';
+    modalContent.style.flexDirection = 'column';
+    modalContent.style.flexGrow = '0';
+    modalContent.style.flexShrink = '0';
+    
+    sizeButtons.forEach(btn => {
+        if (btn.dataset.size === savedSize) {
+            btn.classList.add('bg-white/20');
+        } else {
+            btn.classList.remove('bg-white/20');
+        }
+    });
+    
+    // Size button handlers
+    sizeButtons.forEach(button => {
+        button.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const size = button.dataset.size;
+            
+            // Define exact dimensions for each size
+            const sizes = {
+                small: { width: '560px', height: '580px' },
+                medium: { width: '950px', height: '870px' },
+                large: { width: '1500px', height: '870px' }
+            };
+            
+            // Update button states
+            sizeButtons.forEach(btn => btn.classList.remove('bg-white/20'));
+            button.classList.add('bg-white/20');
+            
+            // Update modal size classes
+            modalContent.classList.remove('chat-size-small', 'chat-size-medium', 'chat-size-large');
+            modalContent.classList.add(`chat-size-${size}`);
+            
+            // Force dimensions with inline styles to override everything
+            const dimensions = sizes[size];
+            modalContent.style.width = dimensions.width;
+            modalContent.style.height = dimensions.height;
+            modalContent.style.minWidth = dimensions.width;
+            modalContent.style.minHeight = dimensions.height;
+            modalContent.style.maxWidth = '90vw';
+            modalContent.style.maxHeight = '85vh';
+            modalContent.style.display = 'flex';
+            modalContent.style.flexDirection = 'column';
+            modalContent.style.flexGrow = '0';
+            modalContent.style.flexShrink = '0';
+            
+            // Reset position to center when changing size
+            xOffset = 0;
+            yOffset = 0;
+            modalContent.style.transform = 'translate(0, 0)';
+            localStorage.setItem('chatModalPosition', JSON.stringify({ x: 0, y: 0 }));
+            
+            // Save size preference
+            localStorage.setItem('chatModalSize', size);
+            
+            // Debug logging
+            console.log(`📐 Chat modal size changed to: ${size}`);
+            console.log(`📏 Set dimensions: ${dimensions.width} x ${dimensions.height}`);
+            console.log(`📏 Current classes:`, modalContent.className);
+            console.log(`📏 Computed width:`, window.getComputedStyle(modalContent).width);
+            console.log(`📏 Computed height:`, window.getComputedStyle(modalContent).height);
+        });
+    });
+    
+    // Dragging functionality
+    let isDragging = false;
+    let currentX;
+    let currentY;
+    let initialX;
+    let initialY;
+    let xOffset = savedPosition.x;
+    let yOffset = savedPosition.y;
+    
+    // Apply saved position
+    if (xOffset !== 0 || yOffset !== 0) {
+        modalContent.style.transform = `translate(${xOffset}px, ${yOffset}px)`;
+    }
+    
+    header.addEventListener('mousedown', dragStart);
+    document.addEventListener('mousemove', drag);
+    document.addEventListener('mouseup', dragEnd);
+    
+    function dragStart(e) {
+        // Don't drag if clicking on buttons
+        if (e.target.closest('button')) return;
+        
+        initialX = e.clientX - xOffset;
+        initialY = e.clientY - yOffset;
+        isDragging = true;
+        header.classList.add('dragging');
+    }
+    
+    function drag(e) {
+        if (isDragging) {
+            e.preventDefault();
+            currentX = e.clientX - initialX;
+            currentY = e.clientY - initialY;
+            xOffset = currentX;
+            yOffset = currentY;
+            
+            modalContent.style.transform = `translate(${currentX}px, ${currentY}px)`;
+        }
+    }
+    
+    function dragEnd() {
+        if (isDragging) {
+            initialX = currentX;
+            initialY = currentY;
+            isDragging = false;
+            header.classList.remove('dragging');
+            
+            // Save position
+            localStorage.setItem('chatModalPosition', JSON.stringify({ x: xOffset, y: yOffset }));
+        }
+    }
+    
+    // Reset position when modal closes
+    const closeButton = document.getElementById('closeChatModal');
+    if (closeButton) {
+        closeButton.addEventListener('click', () => {
+            // Reset position after a short delay to allow close animation
+            setTimeout(() => {
+                xOffset = 0;
+                yOffset = 0;
+                modalContent.style.transform = 'translate(0, 0)';
+                localStorage.setItem('chatModalPosition', JSON.stringify({ x: 0, y: 0 }));
+            }, 300);
+        });
+    }
+    
+    console.log('✅ Chat modal drag and resize features initialized');
 }
