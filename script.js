@@ -25,9 +25,9 @@ const scriptsData = [
         description: "Script recolte pour les ressources clef du donjon belladone",
         badge: "Gratuit via parrainage",
         price: 0,
-        showPrice: false,
+        showPrice: true,
         showPricePrefix: false,
-        priceLabel: "- Permanent",
+        priceLabel: "- Gratuit via parrainage",
         image: "ressourcesbelladone.png",
         detailedDescription: `
             <p>Ici vous trouverez tous les trajets récolte pour les ressources du donjon belladone :</p>
@@ -67,8 +67,8 @@ const scriptsData = [
         description: "Script recolte qui gère automatiquement le leveling des métiers",
         badge: "",
         price: 49,
-        showPrice: false,
-        showPricePrefix: false,
+        showPrice: true,
+        showPricePrefix: true,
         image: "allmetier.png",
         detailedDescription: `
             <p>Hello,</p>
@@ -111,10 +111,10 @@ const scriptsData = [
         category: "combat",
         description: "Script de PL donjon Mallefisk optimisé pour Cra 198/199",
         badge: "Gratuit via parrainage",
-        price: 200,
-        showPrice: false,
+        price: 0,
+        showPrice: true,
         showPricePrefix: false,
-        priceLabel: "- Permanent",
+        priceLabel: "- Gratuit via parrainage",
         image: "mallefisk.png",
         detailedDescription: `
             <p>Script de donjon Mallefisk optimisé pour Cra 198/199. Stuff low cost pour minimiser vos dépenses et maximiser vos gains.</p>
@@ -147,10 +147,10 @@ const scriptsData = [
         category: "combat",
         description: "Script de donjon Cire Momore optimisé pour Elio, Ouginak et Iop",
         badge: "Gratuit via parrainage",
-        price: 200,
-        showPrice: false,
+        price: 0,
+        showPrice: true,
         showPricePrefix: false,
-        priceLabel: "- Permanent",
+        priceLabel: "- Gratuit via parrainage",
         image: "ciremomore.png",
         detailedDescription: `
             <p>Script de farming de Cire Momore avec Elio, Ouginak et Iop.</p>
@@ -189,10 +189,10 @@ const scriptsData = [
         category: "combat",
         description: "Script PL Donjon Belladone B8 optimisé pour Elio, Panda, Forge et 5 mules",
         badge: "Gratuit via parrainage",
-        price: 412,
-        showPrice: false,
+        price: 0,
+        showPrice: true,
         showPricePrefix: false,
-        priceLabel: "- Permanent",
+        priceLabel: "- Gratuit via parrainage",
         image: "djbelladone.png",
         detailedDescription: `
             <p>Hello,</p>
@@ -228,7 +228,7 @@ const scriptsData = [
         description: "Script PL Arene capture Belladone optimisé pour Up vos mules rapidement",
         badge: "",
         price: 294,
-        showPrice: false,
+        showPrice: true,
         showPricePrefix: false,
         priceLabel: "- Permanent",
         image: "plarenebelladone.png",
@@ -262,9 +262,9 @@ const scriptsData = [
         description: "Script de quêtes pour accéder à l'île d'Otomaï.",
         badge: "Gratuit via parrainage",
         price: 0,
-        showPrice: false,
+        showPrice: true,
         showPricePrefix: false,
-        priceLabel: "",
+        priceLabel: "- Gratuit via parrainage",
         image: "queteotomail.png",
         detailedDescription: `
             <p>Script de quêtes pour l'île d'Otomaï.</p>
@@ -321,10 +321,10 @@ const scriptsData = [
         category: "autres",
         description: "Script HDV optimisé pour Snowbot.",
         badge: "Gratuit via parrainage",
-        price: 100,
-        showPrice: false,
+        price: 0,
+        showPrice: true,
         showPricePrefix: false,
-        priceLabel: "- Permanent",
+        priceLabel: "- Gratuit via parrainage",
         image: "hdv.png",
         detailedDescription: `
             <p>Hello,</p>
@@ -358,10 +358,10 @@ const scriptsData = [
         category: "autres",
         description: "Script Auto-Leveling pour monter vos mules du level 1 à 50 sans abonnement.",
         badge: "Gratuit via parrainage",
-        price: 120,
-        showPrice: false,
+        price: 0,
+        showPrice: true,
         showPricePrefix: false,
-        priceLabel: "- Permanent",
+        priceLabel: "- Gratuit via parrainage",
         image: "autoleveling150.png",
         detailedDescription: `
             <p>Hello,</p>
@@ -383,13 +383,13 @@ const scriptsData = [
         id: 11,
         position: 6,
         name: "Koutoulou - IA avancée",
-        category: "combat",
+        category: "prive",
         description: "Script farm Ailes de Koutoulou avec IA avancée pour Snowbot.",
         badge: "Gratuit via parrainage",
-        price: 200,
-        showPrice: false,
+        price: 0,
+        showPrice: true,
         showPricePrefix: false,
-        priceLabel: "- Permanent",
+        priceLabel: "- Gratuit via parrainage",
         image: "Koutoulou.png",
         detailedDescription: `
             <p>Hello,</p>
@@ -415,10 +415,10 @@ const scriptsData = [
         category: "combat",
         description: "Script PL Donjon Toxoliath B8 optimisé pour 3 Cra et 1 Enutrof + 4 mules sasa",
         badge: "Gratuit via parrainage",
-        price: 600,
-        showPrice: false,
+        price: 0,
+        showPrice: true,
         showPricePrefix: false,
-        priceLabel: "- Permanent",
+        priceLabel: "- Gratuit via parrainage",
         image: "toxo.png",
         detailedDescription: `
             <p>Hello, tout est dans la doc normalement !</p>
@@ -444,8 +444,9 @@ const scriptsData = [
         description: "Retrouvez le script du farm Klime + Captures Auto Win",
         badge: "Gratuit via parrainage",
         price: 0,
-        showPrice: false,
+        showPrice: true,
         showPricePrefix: false,
+        priceLabel: "- Gratuit via parrainage",
         image: "klime.png",
         detailedDescription: `
             <p>Hello, retrouvez le script du farm Klime + Captures avec une compo Auto Win !</p>
@@ -462,32 +463,40 @@ const scriptsData = [
             </div>
         `
     },
-        /* Uncomment and fill in more scripts as needed
+    // ===== SCRIPT 14: Donjon Vénérable Endormi =====
     {
         id: 14,
-        name: "",
-        category: "",
-        description: "Coming soon.",
-        badge: "",
+        name: "Vénérable Endormi - 100% WIN & LOW COST",
+        category: "combat",
+        description: "Retrouvez le script du PL Vénérable Endormi Auto Win et Low Cost !",
+        badge: "Gratuit via parrainage",
         price: 0,
-        showPrice: false,
-        showPricePrefix: "",
-        image: "",
+        showPrice: true,
+        showPricePrefix: false,
+        priceLabel: "- Gratuit via parrainage",
+        image: "venerable.png",
         detailedDescription: `
-            <p>Hello, tout est dans la doc normalement !</p>
-            <p>Pour pouvoir avoir ce script gratuitement il faut avoir déposé 250$ sur snowbot (en passant par mon lien de parrainage) pour acheter la licence du bot, ou du script, ou autre ...</p>
+            <p>Hello!</p>
+            <p>Pour la Configuration, vous avez besoin de <strong>4 Rox</strong> (personnages level 200) - <strong>4 Sasa</strong> (mules) <strong>- Coût stuff total : 100-120M kamas pour la totalité des personnages</strong> (moins cher que Belladone !) ⚡</p>
+            <p>Fonctionnalités:</p>
+            <p>✅ Settings personnalisables pour stuffs Sasa</p>
+            <p>✅ Webhooks Discord (suivi combats/leveling)</p>
+            <p>✅ Combat IA optimisée</p>
+            <p>✅ À venir : Version intégrant up 1-50 + chasse au portail 💰</p>
+            <p>Tarif <strong>500$ (427€) | GRATUIT</strong> pour Team Succès ou dépôt 1000$+ avec code CLARTEK Script permanent avec mises à jour incluses.</p>
         `,
         instructions: `
-            <p>Contactez <b>@Darko</b> ou <b>@Upheaval</b> sur Discord si jamais vous avez besoin d'aide</p>
+            <p>Vous avez juste à lire le guide, et tout fonctionnera parfaitement pour vous !</p>
         `,
         formulas: `
             <div class="formula-item">
                 <h4>📦 License Permanente</h4>
-                <p class="formula-price">$0</p>
-                <p>Prix à déterminer</p>
+                <p><strong>Gratuit via parrainage</strong></p>
+                <p><strong>CODE: CLARTEK</strong></p>
             </div>
         `
     },
+            /* Uncomment and fill in more scripts as needed
     {
         id: 15,
         name: "",
