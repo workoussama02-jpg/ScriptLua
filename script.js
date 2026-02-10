@@ -1413,6 +1413,7 @@ window.addEventListener('load', async () => {
                     console.error('🔐 Auth container not found!');
                 }
                 window.Clerk.mountSignIn(signInDiv, {
+                    redirectUrl: window.location.href,
                     appearance: {
                         elements: {
                             rootBox: 'clerk-root-box',
@@ -1483,6 +1484,7 @@ window.addEventListener('load', async () => {
                             console.log('🔐 Remounting sign-in component');
                             signInDiv.innerHTML = ''; // Clear any existing content
                             window.Clerk.mountSignIn(signInDiv, {
+                                redirectUrl: window.location.href,
                                 appearance: {
                                     elements: {
                                         rootBox: 'clerk-root-box',
@@ -1568,6 +1570,7 @@ function hideClerkDashboard() {
     if (signInDiv && window.Clerk) {
         signInDiv.innerHTML = '';
         window.Clerk.mountSignIn(signInDiv, {
+            redirectUrl: window.location.href,
             appearance: {
                 elements: {
                     rootBox: 'clerk-root-box',
