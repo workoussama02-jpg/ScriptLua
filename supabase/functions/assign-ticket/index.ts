@@ -239,16 +239,46 @@ serve(async (req) => {
     }
 
     // Check if moderator exists and is active
-    const { data: moderator, error: moderatorError } = await supabase
+    // Try to find by clerk_id first (most common case from frontend)
+    let moderator = null
+    let moderatorError = null
+    
+    console.log('Looking up moderator with ID:', moderatorId)
+    
+    // First try: search by clerk_id
+    const { data: moderatorByClerkId, error: clerkIdError } = await supabase
       .from('users')
       .select('id, clerk_id, name, email, role, active')
-      .eq('id', moderatorId)
+      .eq('clerk_id', moderatorId)
       .eq('role', 'moderator')
       .eq('active', true)
-      .single()
+      .maybeSingle()
+    
+    if (moderatorByClerkId) {
+      console.log('Found moderator by clerk_id:', moderatorByClerkId.name)
+      moderator = moderatorByClerkId
+    } else {
+      console.log('Not found by clerk_id, trying database UUID')
+      // Second try: search by database id (UUID)
+      const { data: moderatorById, error: idError } = await supabase
+        .from('users')
+        .select('id, clerk_id, name, email, role, active')
+        .eq('id', moderatorId)
+        .eq('role', 'moderator')
+        .eq('active', true)
+        .maybeSingle()
+      
+      if (moderatorById) {
+        console.log('Found moderator by database id:', moderatorById.name)
+        moderator = moderatorById
+      } else {
+        moderatorError = idError || clerkIdError
+      }
+    }
 
-    if (moderatorError || !moderator) {
-      console.error('Moderator not found or inactive:', moderatorError)
+    if (!moderator) {
+      console.error('Moderator not found or inactive. Searched for:', moderatorId)
+      console.error('Errors:', { clerkIdError, moderatorError })
       return new Response(
         JSON.stringify({ success: false, error: 'Moderator not found or inactive' }),
         {

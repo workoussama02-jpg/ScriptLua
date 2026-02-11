@@ -143,6 +143,7 @@ npm run serve       # Alias for preview
 - JWT-based authentication
 - HTTPS enforcement (in production)
 - Git-ignored secrets (.gitignore)
+- Pinned CDN dependencies (Clerk @5)
 
 ### ⚠️ Before Production
 - [ ] Switch to production API keys

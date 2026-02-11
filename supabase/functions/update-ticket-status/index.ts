@@ -236,7 +236,12 @@ serve(async (req) => {
       hasPermission = true
     } else if (user.role === 'moderator') {
       // Moderators can update status of tickets assigned to them
-      hasPermission = ticket.assigned_to === userId // Use clerk_id for comparison
+      // OR escalate any ticket (escalation is a staff action)
+      if (newStatus === 'escalated') {
+        hasPermission = true // Moderators can escalate any ticket
+      } else {
+        hasPermission = ticket.assigned_to === userId // Use clerk_id for comparison
+      }
     } else if (user.role === 'client') {
       // Clients can only update status of their own tickets and only to limited statuses
       const allowedClientStatuses = ['waiting-for-client', 'resolved', 'closed']

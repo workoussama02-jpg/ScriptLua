@@ -177,6 +177,28 @@ serve(async (req) => {
     )
   }
 
+  const DISCORD_WEBHOOK_MODERATOR = Deno.env.get('DISCORD_WEBHOOK_MODERATOR')
+  if (!DISCORD_WEBHOOK_MODERATOR) {
+    return new Response(
+      JSON.stringify({ success: false, error: 'Server configuration error: DISCORD_WEBHOOK_MODERATOR not set' }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      }
+    )
+  }
+
+  const SITE_URL = Deno.env.get('SITE_URL')
+  if (!SITE_URL) {
+    return new Response(
+      JSON.stringify({ success: false, error: 'Server configuration error: SITE_URL not set' }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      }
+    )
+  }
+
   try {
     // Create Supabase client with service role
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
@@ -196,6 +218,7 @@ serve(async (req) => {
     const token = clerkToken
     
     let userId: string
+    let userEmail: string | null = null
 
     try {
       // Verify JWT signature and decode payload using Clerk's public keys
@@ -203,29 +226,31 @@ serve(async (req) => {
       userId = payload.sub
       
       // Extract email from JWT payload
-      const userEmail = payload.email || payload.user?.email || payload.user_metadata?.email || null
+      userEmail = payload.email || payload.user?.email || payload.user_metadata?.email || null
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
       const errorStack = error instanceof Error ? error.stack : undefined
+      
+      const isDev = Deno.env.get('ENVIRONMENT') === 'development'
+      const isDev = Deno.env.get('ENVIRONMENT') === 'development'
       
       // Return detailed error in development
       return new Response(
         JSON.stringify({ 
           success: false, 
           error: "Invalid token",
-          debug: {
+          ...(isDev && { debug: {
             message: errorMessage,
             stack: errorStack,
             clerkDomain: Deno.env.get('CLERK_DOMAIN'),
             clerkIssuer: Deno.env.get('CLERK_ISSUER')
-          }
+          }})
         }),
         {
           status: 401,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
-      )
-    }
+      )      )    }
 
     if (!userId) {
       return new Response(
@@ -362,8 +387,15 @@ serve(async (req) => {
       .single()
 
     if (ticketError) {
+      const isDebug = Deno.env.get('DEBUG') === 'true' || Deno.env.get('NODE_ENV') === 'development';
+      const responseBody = {
+        success: false,
+        error: 'Failed to create ticket',
+        error_code: 'TICKET_CREATION_FAILED',
+        ...(isDebug && { debug: { userId, user_id: user.id, ticketToCreate } })
+      };
       return new Response(
-        JSON.stringify({ success: false, error: `Failed to create ticket: ${ticketError.message}`, debug: { userId: userId, user_id: user.id, ticketToCreate } }),
+        JSON.stringify(responseBody),
         {
           status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -473,9 +505,8 @@ serve(async (req) => {
                 }
               } catch (msgException) {
                 console.error('❌ Exception during auto-assignment system message:', msgException)
-              }
-
-              // Send Discord notification for auto-assignment (with idempotency check)
+                  if (insertError && insertError.code !== '23505') { // 23505 = unique_violation
+                    console.error('❌ Error inserting notification record:', insertError)              // Send Discord notification for auto-assignment (with idempotency check)
               try {
                 console.log('🔔 Checking if notification already sent')
                 
@@ -508,9 +539,8 @@ serve(async (req) => {
                   if (insertError && !insertError.message.includes('duplicate')) {
                     console.error('❌ Error inserting notification record:', insertError)
                   } else {
-                    // Get from env or use hardcoded for testing
-                    const DISCORD_WEBHOOK_MODERATOR = Deno.env.get('DISCORD_WEBHOOK_MODERATOR') || 'https://discord.com/api/webhooks/1468431833569034503/kKJAHqBigEk5bcj8KRwoCRTwtBUFUKjil0kH-fSY_ttokzbaMr-wSk82E7GaThsidjSL'
-                    const SITE_URL = Deno.env.get('SITE_URL') || 'http://localhost:3000'
+                    const DISCORD_WEBHOOK_MODERATOR = Deno.env.get('DISCORD_WEBHOOK_MODERATOR')!
+                    const SITE_URL = Deno.env.get('SITE_URL')!
                     
                     console.log('Using Discord webhook and site URL')
                     
@@ -606,9 +636,9 @@ serve(async (req) => {
           
           // Send Discord alert since no moderators are available
           try {
-            const DISCORD_WEBHOOK_MODERATOR = Deno.env.get('DISCORD_WEBHOOK_MODERATOR') || 'https://discord.com/api/webhooks/1468431833569034503/kKJAHqBigEk5bcj8KRwoCRTwtBUFUKjil0kH-fSY_ttokzbaMr-wSk82E7GaThsidjSL'
+            const DISCORD_WEBHOOK_MODERATOR = Deno.env.get('DISCORD_WEBHOOK_MODERATOR')!
             const DISCORD_ROLE_ID = Deno.env.get('DISCORD_ROLE_ID')
-            const SITE_URL = Deno.env.get('SITE_URL') || 'http://localhost:3000'
+            const SITE_URL = Deno.env.get('SITE_URL')!
             
             // Check if ANY notification was recently sent (anti-duplicate within 2 minutes)
             const { data: recentNotifs, error: checkError } = await supabase
@@ -732,14 +762,20 @@ serve(async (req) => {
             const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
             const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
             
+            const controller = new AbortController()
+            const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout
+            
             const notifyResponse = await fetch(`${SUPABASE_URL}/functions/v1/notify-ticket-created`, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
               },
-              body: JSON.stringify({ ticket: ticket })
+              body: JSON.stringify({ ticket: ticket }),
+              signal: controller.signal
             })
+            
+            clearTimeout(timeoutId)
             
             if (!notifyResponse.ok) {
               console.error('❌ Failed to call notify-ticket-created:', notifyResponse.status)
@@ -747,7 +783,11 @@ serve(async (req) => {
               console.log('✅ Successfully called notify-ticket-created for escalation scheduling')
             }
           } catch (notifyException) {
-            console.error('❌ Exception calling notify-ticket-created:', notifyException)
+            if (notifyException.name === 'AbortError') {
+              console.error('❌ notify-ticket-created request aborted due to timeout')
+            } else {
+              console.error('❌ Exception calling notify-ticket-created:', notifyException)
+            }
           }
         }
       }
@@ -773,21 +813,19 @@ serve(async (req) => {
     )
 
   } catch (error: unknown) {
-    // Extract error message safely for logging and response
-    const errorMessage = error instanceof Error ? error.message : String(error)
-    const errorStack = error instanceof Error ? error.stack : undefined
+    const isDev = Deno.env.get('ENVIRONMENT') === 'development'
     
-    // Log the full error server-side safely
-    console.error('Error in create-ticket:', errorMessage)
-    console.error('Error stack:', errorStack)
-    
-    // Return error response to client with detailed info
     return new Response(
       JSON.stringify({ 
         success: false, 
         error: "Internal server error",
-        debug: {
-          message: errorMessage,
+        ...(isDev && { debug: { message: errorMessage, stack: errorStack } })
+      }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      }
+    )          message: errorMessage,
           stack: errorStack
         }
       }),

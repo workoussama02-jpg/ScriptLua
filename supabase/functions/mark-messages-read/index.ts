@@ -171,7 +171,7 @@ serve(async (req) => {
     // Get user data from database
     const { data: user, error: userError } = await supabase
       .from('users')
-      .select('id, name, email, role, active')
+      .select('id, clerk_id, name, email, role, active')
       .eq('clerk_id', userId)
       .eq('active', true)
       .single()
@@ -190,7 +190,18 @@ serve(async (req) => {
     console.log('User role:', user.role)
 
     // Get read data from request
-    const readData: ReadData = await req.json()
+    let readData: ReadData
+    try {
+      readData = await req.json()
+    } catch {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Invalid JSON in request body' }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      )
+    }
 
     if (!readData || !readData.ticketId) {
       return new Response(
@@ -201,7 +212,6 @@ serve(async (req) => {
         }
       )
     }
-
     // Check if user has access to the ticket
     const ticketId = readData.ticketId
     let hasAccess = false
@@ -215,9 +225,8 @@ serve(async (req) => {
         .single()
 
       if (!ticketError && ticket) {
-        hasAccess = ticket.client_id === userId // Use clerk_id for comparison
-      }
-    } else if (user.role === 'moderator') {
+        hasAccess = ticket.client_id === userId // Compare with Clerk ID from JWT
+      }    } else if (user.role === 'moderator') {
       // Moderators can mark messages as read in tickets assigned to them or open tickets
       const { data: ticket, error: ticketError } = await supabase
         .from('tickets')
@@ -226,7 +235,7 @@ serve(async (req) => {
         .single()
 
       if (!ticketError && ticket) {
-        hasAccess = ticket.assigned_to === userId || ticket.status === 'open' // Use clerk_id for comparison
+        hasAccess = ticket.assigned_to === userId || ticket.status === 'open' // Compare with Clerk ID from JWT
       }
     } else if (user.role === 'admin') {
       // Admins can mark messages as read in all tickets
@@ -339,8 +348,9 @@ serve(async (req) => {
       .from('ticket_reads')
       .upsert({
         ticket_id: ticketId,
-        user_id: user.id,
-        last_read_at: timestampToUse
+        user_id: user.id, // Use database user ID for ticket_reads table
+        last_read_at: timestampToUse,
+        updated_at: serverTimeISOString
       }, {
         onConflict: 'ticket_id,user_id'
       })
@@ -375,11 +385,10 @@ serve(async (req) => {
   } catch (error) {
     console.error('Error in mark-messages-read:', error)
     return new Response(
-      JSON.stringify({ success: false, error: error.message }),
+      JSON.stringify({ success: false, error: 'An unexpected error occurred' }),
       {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       }
     )
-  }
-})
+  }})

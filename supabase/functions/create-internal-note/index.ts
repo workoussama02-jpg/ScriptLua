@@ -10,29 +10,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-clerk-token',
 }
 
-// Constant-time comparison helper to prevent timing attacks
-function timingSafeEqual(a: string | null, b: string | null): boolean {
-  if (a === null || b === null) {
-    return false
-  }
-
-  const encoder = new TextEncoder()
-  const aBytes = encoder.encode(a)
-  const bBytes = encoder.encode(b)
-
-  // Pad both byte arrays to the same length to prevent timing attacks
-  const maxLength = Math.max(aBytes.length, bBytes.length)
-  const paddedA = new Uint8Array(maxLength)
-  const paddedB = new Uint8Array(maxLength)
-
-  // Copy the original bytes into the padded arrays
-  paddedA.set(aBytes)
-  paddedB.set(bBytes)
-
-  // Perform constant-time comparison on equal-length buffers
-  return crypto.subtle.timingSafeEqual(paddedA, paddedB)
-}
-
 // Clerk JWT verification utilities
 async function getClerkPublicKey(kid: string): Promise<CryptoKey> {
   const clerkDomain = Deno.env.get('CLERK_DOMAIN')
@@ -122,14 +99,17 @@ async function verifyClerkToken(token: string): Promise<any> {
     }
 
     const expectedAudience = Deno.env.get('CLERK_AUDIENCE')
-    if (expectedAudience && payload.aud) {
+    if (expectedAudience) {
+      if (!payload.aud) {
+        throw new Error('Missing JWT audience claim')
+      }
       // Validate audience claim
       const audiences = Array.isArray(payload.aud) ? payload.aud : [payload.aud]
       if (!audiences.includes(expectedAudience)) {
         throw new Error(`Invalid JWT audience: expected ${expectedAudience}, got ${audiences.join(', ')}`)
       }
     }
-    // Note: CLERK_AUDIENCE is now optional - if not set or token has no aud claim, we accept the token
+    // Note: CLERK_AUDIENCE is optional - if not set, we accept the token regardless of aud claim
 
     return payload
   } catch (error) {
@@ -199,30 +179,30 @@ serve(async (req) => {
       const payload = await verifyClerkToken(token)
       userId = payload.sub
 
-      // Extract email from JWT payload
-      const userEmail = payload.email || payload.user?.email || payload.user_metadata?.email || null
-    } catch (error) {
+       const payload = await verifyClerkToken(token)
+       userId = payload.sub    } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
       const errorStack = error instanceof Error ? error.stack : undefined
+
+      const isDev = Deno.env.get('ENVIRONMENT') === 'development'
 
       // Return detailed error in development
       return new Response(
         JSON.stringify({
           success: false,
           error: "Invalid token",
-          debug: {
+          ...(isDev && { debug: {
             message: errorMessage,
             stack: errorStack,
             clerkDomain: Deno.env.get('CLERK_DOMAIN'),
             clerkIssuer: Deno.env.get('CLERK_ISSUER')
-          }
+          }})
         }),
         {
           status: 401,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
-      )
-    }
+      )    }
 
     if (!userId) {
       return new Response(
@@ -267,7 +247,19 @@ serve(async (req) => {
     }
 
     // Get internal note data from request
-    const { ticketId, content } = await req.json() as InternalNoteData
+    let body: InternalNoteData
+    try {
+      body = await req.json() as InternalNoteData
+    } catch {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Invalid JSON body' }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      )
+    }
+    const { ticketId, content } = body
 
     if (!ticketId || !content) {
       return new Response(
@@ -278,7 +270,6 @@ serve(async (req) => {
         }
       )
     }
-
     // Validate content
     if (content.length > 500) {
       return new Response(
@@ -391,10 +382,12 @@ serve(async (req) => {
       JSON.stringify({
         success: false,
         error: "Internal server error",
-        debug: {
-          message: errorMessage,
-          stack: errorStack
-        }
+        ...(Deno.env.get('NODE_ENV') !== 'production' ? {
+          debug: {
+            message: errorMessage,
+            stack: errorStack
+          }
+        } : {})
       }),
       {
         status: 500,

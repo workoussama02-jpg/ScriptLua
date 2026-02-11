@@ -18,7 +18,22 @@ async function getClerkPublicKey(kid: string): Promise<CryptoKey> {
   }
 
   const jwksUrl = `https://${clerkDomain}/.well-known/jwks.json`
-  const response = await fetch(jwksUrl)
+
+  // Create AbortController for timeout
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout
+
+  let response: Response
+  try {
+    response = await fetch(jwksUrl, { signal: controller.signal })
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      throw new Error('JWKS fetch timed out after 5 seconds')
+    }
+    throw new Error(`Failed to fetch JWKS: ${error.message}`)
+  } finally {
+    clearTimeout(timeoutId)
+  }
   
   if (!response.ok) {
     throw new Error(`Failed to fetch JWKS: ${response.status}`)
@@ -50,8 +65,12 @@ async function verifyClerkToken(token: string): Promise<any> {
   try {
     // Decode header to get kid
     const [headerB64] = token.split('.')
-    const header = JSON.parse(atob(headerB64.replace(/-/g, '+').replace(/_/g, '/')))
-    
+    let base64 = headerB64.replace(/-/g, '+').replace(/_/g, '/')
+    // Add padding if necessary
+    while (base64.length % 4 !== 0) {
+      base64 += '='
+    }
+    const header = JSON.parse(atob(base64))    
     if (!header.kid) {
       throw new Error('No key ID found in JWT header')
     }
@@ -169,7 +188,9 @@ serve(async (req) => {
       )
     }
 
-    console.log('Authenticated user ID:', userId)
+    if (Deno.env.get('LOG_PII') === 'true') {
+      console.log('Authenticated user ID:', userId)
+    }
 
     // Get user data from database
     const { data: user, error: userError } = await supabase
@@ -206,7 +227,17 @@ serve(async (req) => {
     }
 
     // Validate message content
-    if (messageData.content.length > 1000) {
+    const trimmedContent = messageData.content.trim()
+    if (trimmedContent.length === 0) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Message content cannot be empty' }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      )
+    }
+    if (trimmedContent.length > 1000) {
       return new Response(
         JSON.stringify({ success: false, error: 'Message too long (max 1000 characters)' }),
         {
@@ -219,17 +250,19 @@ serve(async (req) => {
     // Check if user has access to the ticket
     const ticketId = messageData.ticketId
     let hasAccess = false
+    let ticketStatus = null
 
     if (user.role === 'client') {
       // Clients can only message their own tickets
       const { data: ticket, error: ticketError } = await supabase
         .from('tickets')
-        .select('client_id')
+        .select('client_id, status')
         .eq('id', ticketId)
         .single()
 
       if (!ticketError && ticket) {
-        hasAccess = ticket.client_id === userId // Use clerk_id for comparison
+        hasAccess = ticket.client_id === user.id // Use database user id for comparison
+        ticketStatus = ticket.status
       }
     } else if (user.role === 'moderator') {
       // Moderators can message tickets assigned to them or open tickets
@@ -240,16 +273,39 @@ serve(async (req) => {
         .single()
 
       if (!ticketError && ticket) {
-        hasAccess = ticket.assigned_to === userId || ticket.status === 'open' // Use clerk_id for comparison
+        hasAccess = ticket.assigned_to === user.id || ticket.status === 'open' // Use database user id for comparison
+        ticketStatus = ticket.status
       }
     } else if (user.role === 'admin') {
-      // Admins can message all tickets
-      hasAccess = true
+      // Admins can message all tickets, but still need to check status
+      const { data: ticket, error: ticketError } = await supabase
+        .from('tickets')
+        .select('status')
+        .eq('id', ticketId)
+        .single()
+
+      if (!ticketError && ticket) {
+        hasAccess = true
+        ticketStatus = ticket.status
+      } else {
+        hasAccess = true
+      }
     }
 
     if (!hasAccess) {
       return new Response(
         JSON.stringify({ success: false, error: 'Access denied to this ticket' }),
+        {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      )
+    }
+
+    // Check if ticket is closed - nobody can send messages to closed tickets
+    if (ticketStatus === 'closed') {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Cannot send messages to closed tickets' }),
         {
           status: 403,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -263,14 +319,14 @@ serve(async (req) => {
     // Create the message with authenticated user data
     const messageToInsert = {
       ticket_id: ticketId,
-      content: messageData.content,
+      content: trimmedContent,
       sender_id: user.id, // Use authenticated user's database ID
       sender_name: user.name || user.email || (user.role === 'client' ? 'Client' : 'Staff'),
       sender_type: senderType,
       sender_avatar: user.discord_avatar || null
     }
 
-    console.log('Sending message:', { ticketId, senderId: user.id, contentLength: messageData.content.length })
+    console.log('Sending message:', { ticketId, senderId: user.id, contentLength: trimmedContent.length })
 
     // Insert the message
     const { data: message, error: messageError } = await supabase
@@ -282,9 +338,8 @@ serve(async (req) => {
     if (messageError) {
       console.error('Error sending message:', messageError)
       return new Response(
-        JSON.stringify({ success: false, error: `Failed to send message: ${messageError.message}` }),
-        {
-          status: 500,
+        JSON.stringify({ success: false, error: 'Failed to send message' }),
+        {          status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       )

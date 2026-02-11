@@ -3,6 +3,7 @@
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { verifyToken } from 'https://esm.sh/@clerk/backend'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -44,20 +45,56 @@ serve(async (req) => {
     // Create Supabase client with service role
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
+    // Validate additional required environment variables
+    const DISCORD_WEBHOOK_MODERATOR = Deno.env.get('DISCORD_WEBHOOK_MODERATOR')
+    if (!DISCORD_WEBHOOK_MODERATOR) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Server configuration error' }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      )
+    }
+
+    const SITE_URL = Deno.env.get('SITE_URL')
+    if (!SITE_URL) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Server configuration error' }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      )
+    }
+
     // Optional Clerk token validation (for additional security)
     const clerkToken = req.headers.get('x-clerk-token')
     if (clerkToken) {
       console.log('✅ Clerk token provided, validating...')
-      // If token is provided, validate it
       try {
-        // Basic token validation - just check if it's a JWT
-        const parts = clerkToken.split('.')
-        if (parts.length !== 3) {
-          throw new Error('Invalid JWT format')
+        const CLERK_SECRET_KEY = Deno.env.get('CLERK_SECRET_KEY')
+        if (!CLERK_SECRET_KEY) {
+          console.error('CLERK_SECRET_KEY not set')
+          return new Response(
+            JSON.stringify({ success: false, error: 'Server configuration error' }),
+            {
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            }
+          )
         }
-        console.log('✅ Clerk token format valid')
+        const verified = await verifyToken(clerkToken, { secretKey: CLERK_SECRET_KEY })
+        console.log('✅ Clerk token verified, subject:', verified.sub)
       } catch (error) {
-        console.log('⚠️ Invalid Clerk token provided, but continuing since this is an internal operation')
+        console.log('⚠️ Invalid Clerk token provided:', error.message)
+        return new Response(
+          JSON.stringify({ success: false, error: 'Invalid authentication token' }),
+          {
+            status: 401,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          }
+        )
       }
     } else {
       console.log('ℹ️ No Clerk token provided, proceeding with frontend authentication')
@@ -117,9 +154,6 @@ serve(async (req) => {
 
       // Send Discord notification that moderator is now available
       try {
-        const DISCORD_WEBHOOK_MODERATOR = Deno.env.get('DISCORD_WEBHOOK_MODERATOR') || 'https://discord.com/api/webhooks/1468431833569034503/kKJAHqBigEk5bcj8KRwoCRTwtBUFUKjil0kH-fSY_ttokzbaMr-wSk82E7GaThsidjSL'
-        const SITE_URL = Deno.env.get('SITE_URL') || 'http://localhost:3000'
-
         // Get moderator details
         const { data: moderatorData } = await supabase
           .from('users')
@@ -230,28 +264,55 @@ serve(async (req) => {
         } else {
           console.log(`👥 Found ${availableModerators.length} available moderators`)
 
-          // Get current ticket counts for each moderator
-          const moderatorCounts = new Map()
-          for (const mod of availableModerators) {
-            const { count } = await supabase
-              .from('tickets')
-              .select('*', { count: 'exact', head: true })
-              .eq('assigned_to', mod.clerk_id)
-              .eq('status', 'in-progress')
-            moderatorCounts.set(mod.clerk_id, count || 0)
+          // Get current ticket counts for all moderators in one query
+          const { data: inProgressTickets, error: countError } = await supabase
+            .from('tickets')
+            .select('assigned_to')
+            .eq('status', 'in-progress')
+            .in('assigned_to', availableModerators.map(m => m.clerk_id))
+
+          if (countError) {
+            console.error('❌ Error fetching ticket counts:', countError)
+            return new Response(
+              JSON.stringify({ success: false, error: 'Failed to fetch ticket counts' }),
+              {
+                status: 500,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              }
+            )
           }
 
-          // Sort moderators by current load
-          const sortedModerators = availableModerators.sort((a, b) => 
-            (moderatorCounts.get(a.clerk_id) || 0) - (moderatorCounts.get(b.clerk_id) || 0)
-          )
+          const moderatorCounts = new Map()
+          for (const mod of availableModerators) {
+            moderatorCounts.set(mod.clerk_id, 0)
+          }
+          for (const ticket of inProgressTickets || []) {
+            if (ticket.assigned_to && moderatorCounts.has(ticket.assigned_to)) {
+              moderatorCounts.set(ticket.assigned_to, moderatorCounts.get(ticket.assigned_to) + 1)
+            }
+          }
 
-          // Assign tickets to moderators in round-robin fashion
-          for (let i = 0; i < unassignedTickets.length; i++) {
-            const ticket = unassignedTickets[i]
-            const moderator = sortedModerators[i % sortedModerators.length]
+          // Assign tickets to moderators with load balancing
+          for (const ticket of unassignedTickets) {
+            // Find moderator with lowest current load
+            let minLoad = Infinity
+            let selectedModerator = null
+            for (const mod of availableModerators) {
+              const load = moderatorCounts.get(mod.clerk_id) || 0
+              if (load < minLoad) {
+                minLoad = load
+                selectedModerator = mod
+              }
+            }
 
-            console.log(`🎯 Assigning ticket ${ticket.id} to ${moderator.name}`)
+            if (!selectedModerator) {
+              console.log('⚠️ No available moderator found for ticket assignment')
+              continue
+            }
+
+            const moderator = selectedModerator
+
+            console.log(`🎯 Assigning ticket ${ticket.id} to ${moderator.name} (current load: ${minLoad})`)
 
             // Update ticket
             const { error: assignError } = await supabase
@@ -267,6 +328,9 @@ serve(async (req) => {
               console.error(`❌ Error assigning ticket ${ticket.id}:`, assignError)
               continue
             }
+
+            // Update load
+            moderatorCounts.set(moderator.clerk_id, minLoad + 1)
 
             // Insert system message (with idempotency check)
             try {
@@ -289,7 +353,7 @@ serve(async (req) => {
                 console.log('ℹ️ Recent reassignment system message already exists for this ticket, skipping')
               } else {
                 console.log('💬 Inserting system message for reassignment')
-                await supabase
+                const { error: msgError } = await supabase
                   .from('messages')
                   .insert([{
                     ticket_id: ticket.id,
@@ -298,8 +362,11 @@ serve(async (req) => {
                     sender_name: 'Système',
                     sender_id: 'system'
                   }])
-                console.log('✅ System message inserted')
-              }
+                if (msgError) {
+                  console.error(`❌ Error inserting system message for ticket ${ticket.id}:`, msgError)
+                } else {
+                  console.log('✅ System message inserted')
+                }              }
             } catch (msgException) {
               console.error('❌ Exception checking/inserting system message:', msgException)
             }
@@ -337,9 +404,6 @@ serve(async (req) => {
                 if (insertError && !insertError.message.includes('duplicate')) {
                   console.error('❌ Error inserting notification record:', insertError)
                 } else {
-                  const DISCORD_WEBHOOK_MODERATOR = Deno.env.get('DISCORD_WEBHOOK_MODERATOR') || 'https://discord.com/api/webhooks/1468431833569034503/kKJAHqBigEk5bcj8KRwoCRTwtBUFUKjil0kH-fSY_ttokzbaMr-wSk82E7GaThsidjSL'
-                  const SITE_URL = Deno.env.get('SITE_URL') || 'http://localhost:3000'
-
                   const discordMessage = {
                     embeds: [{
                       author: {
@@ -350,13 +414,13 @@ serve(async (req) => {
                       color: 0x3B82F6, // Blue - reassignment color
                       fields: [
                         {
-                          name: '� Ticket',
+                          name: '🎫 Ticket',
                           value: `#${ticket.id.substring(0, 8)}`,
                           inline: true
                         },
                         {
                           name: '👤 Client',
-                          value: ticket.client_name,
+                          value: ticket.client_name || 'Unknown Client',
                           inline: true
                         },
                         {
@@ -470,8 +534,8 @@ serve(async (req) => {
                 .eq('sender_type', 'system')
                 .eq('sender_id', 'system')
                 .ilike('content', '%remis en file d\'attente%')
-                .limit(1)
-              
+                .gte('created_at', new Date(Date.now() - 2 * 60 * 1000).toISOString())
+                .limit(1)              
               if (checkError) {
                 console.error('❌ Error checking for existing unassignment messages:', checkError)
               } else if (existingMessages && existingMessages.length > 0) {
@@ -558,9 +622,6 @@ serve(async (req) => {
               if (insertError && !insertError.message.includes('duplicate') && !insertError.message.includes('null value')) {
                 console.error('❌ Error inserting alert notification record:', insertError)
               } else {
-                const DISCORD_WEBHOOK_MODERATOR = Deno.env.get('DISCORD_WEBHOOK_MODERATOR') || 'https://discord.com/api/webhooks/1468431833569034503/kKJAHqBigEk5bcj8KRwoCRTwtBUFUKjil0kH-fSY_ttokzbaMr-wSk82E7GaThsidjSL'
-                const SITE_URL = Deno.env.get('SITE_URL') || 'http://localhost:3000'
-
                 const discordMessage = {
                   embeds: [{
                     author: {
@@ -600,8 +661,7 @@ serve(async (req) => {
                   }]
                 }
 
-                console.log('📤 Sending Discord alert with message:', discordMessage.content)
-
+                console.log('📤 Sending Discord alert notification')
                 const controller = new AbortController()
                 const timeoutId = setTimeout(() => controller.abort(), 10000)
 

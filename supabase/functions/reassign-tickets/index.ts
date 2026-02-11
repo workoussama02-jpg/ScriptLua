@@ -3,10 +3,118 @@
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { decode, verify, type Algorithm } from "https://deno.land/x/djwt@v3.0.2/mod.ts"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-clerk-token',
+}
+
+// Clerk JWT verification utilities
+async function getClerkPublicKey(kid: string): Promise<CryptoKey> {
+  const clerkDomain = Deno.env.get('CLERK_DOMAIN')
+
+  if (!clerkDomain) {
+    throw new Error('CLERK_DOMAIN environment variable not set')
+  }
+
+  const jwksUrl = `https://${clerkDomain}/.well-known/jwks.json`
+
+  // Create AbortController for timeout
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout
+
+  let response: Response
+  try {
+    response = await fetch(jwksUrl, { signal: controller.signal })
+  } catch (error) {
+    clearTimeout(timeoutId)
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('JWKS fetch timed out after 5 seconds')
+    }
+    throw error
+  }
+
+  clearTimeout(timeoutId)
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch JWKS: ${response.status}`)
+  }
+
+  const jwks = await response.json()
+
+  const key = jwks.keys.find((k: any) => k.kid === kid)
+
+  if (!key) {
+    throw new Error(`Public key with kid ${kid} not found`)
+  }
+
+  // Validate key algorithm
+  if (key.alg !== 'RS256') {
+    throw new Error(`Invalid key algorithm: expected RS256, got ${key.alg}`)
+  }
+
+  // Convert JWK to CryptoKey
+  return await crypto.subtle.importKey(
+    'jwk',
+    key,
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false,
+    ['verify']
+  )
+}
+
+async function verifyClerkToken(token: string): Promise<any> {
+  try {
+    // Decode header to get kid
+    const [headerB64] = token.split('.')
+
+    // Convert base64url to base64 by replacing chars and adding padding
+    let base64 = headerB64.replace(/-/g, '+').replace(/_/g, '/')
+    while (base64.length % 4) {
+      base64 += '='
+    }
+
+    let header: any
+    try {
+      header = JSON.parse(atob(base64))
+    } catch (decodeError) {
+      throw new Error('Failed to decode JWT header')
+    }
+
+    if (!header.kid) {
+      throw new Error('No key ID found in JWT header')
+    }
+
+    // Get the public key
+    const publicKey = await getClerkPublicKey(header.kid)
+
+    // Verify the token
+    const payload = await verify(token, publicKey)
+
+    // Validate JWT claims
+    const expectedIssuer = Deno.env.get('CLERK_ISSUER')
+    if (expectedIssuer && payload.iss !== expectedIssuer) {
+      throw new Error(`Invalid JWT issuer: expected ${expectedIssuer}, got ${payload.iss}`)
+    }
+
+    const expectedAudience = Deno.env.get('CLERK_AUDIENCE')
+    if (expectedAudience) {
+      if (!payload.aud) {
+        throw new Error('Missing JWT audience claim')
+      }
+      // Validate audience claim
+      const audiences = Array.isArray(payload.aud) ? payload.aud : [payload.aud]
+      if (!audiences.includes(expectedAudience)) {
+        throw new Error(`Invalid JWT audience: expected ${expectedAudience}, got ${audiences.join(', ')}`)
+      }
+    }
+
+    return payload
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    throw new Error(`JWT verification failed: ${errorMessage}`)
+  }
 }
 
 serve(async (req) => {
@@ -44,9 +152,6 @@ serve(async (req) => {
     // Create Supabase client with service role
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
-    // For reassign, we can allow any authenticated user, or restrict to moderators
-    // For now, allow any authenticated user
-
     // Extract Clerk JWT from custom header
     const clerkToken = req.headers.get('x-clerk-token')
     if (!clerkToken) {
@@ -59,8 +164,68 @@ serve(async (req) => {
       )
     }
 
-    // For simplicity, just check if token exists, don't verify fully
-    // In production, verify the token
+    let userId: string
+
+    try {
+      // Verify JWT signature and decode payload using Clerk's public keys
+      const payload = await verifyClerkToken(clerkToken)
+      userId = payload.sub
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Invalid token",
+          debug: Deno.env.get('NODE_ENV') !== 'production' ? { message: errorMessage } : undefined
+        }),
+        {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      )
+    }
+
+    if (!userId) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'No user ID found in token' }),
+        {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      )
+    }
+
+    // Get user data from database
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id, name, email, role, active, clerk_id')
+      .eq('clerk_id', userId)
+      .eq('active', true)
+      .single()
+
+    if (userError || !user) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'User not found or inactive'
+        }),
+        {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      )
+    }
+
+    // Only moderators and admins can reassign tickets
+    if (user.role !== 'moderator' && user.role !== 'admin') {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Only staff members can reassign tickets' }),
+        {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      )
+    }
 
     // Find unassigned tickets
     const { data: unassignedTickets, error: ticketError } = await supabase
@@ -120,15 +285,32 @@ serve(async (req) => {
 
     console.log(`👥 Found ${availableModerators.length} available moderators`)
 
-    // Get current ticket counts for each moderator
+    // Get current ticket counts for all moderators in one query
+    const { data: inProgressTickets, error: countError } = await supabase
+      .from('tickets')
+      .select('assigned_to')
+      .eq('status', 'in-progress')
+      .in('assigned_to', availableModerators.map(m => m.clerk_id))
+
+    if (countError) {
+      console.error('❌ Error fetching ticket counts:', countError)
+      return new Response(
+        JSON.stringify({ success: false, error: 'Failed to fetch ticket counts' }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      )
+    }
+
     const moderatorCounts = new Map()
     for (const mod of availableModerators) {
-      const { count } = await supabase
-        .from('tickets')
-        .select('*', { count: 'exact', head: true })
-        .eq('assigned_to', mod.clerk_id)
-        .eq('status', 'in-progress')
-      moderatorCounts.set(mod.clerk_id, count || 0)
+      moderatorCounts.set(mod.clerk_id, 0)
+    }
+    for (const ticket of inProgressTickets || []) {
+      if (ticket.assigned_to && moderatorCounts.has(ticket.assigned_to)) {
+        moderatorCounts.set(ticket.assigned_to, moderatorCounts.get(ticket.assigned_to) + 1)
+      }
     }
 
     // Sort moderators by current load
@@ -145,8 +327,8 @@ serve(async (req) => {
 
       console.log(`🎯 Assigning ticket ${ticket.id} to ${moderator.name}`)
 
-      // Update ticket
-      const { error: assignError } = await supabase
+      // Update ticket (conditional to prevent race conditions)
+      const { data: updatedTicket, error: assignError } = await supabase
         .from('tickets')
         .update({
           assigned_to: moderator.clerk_id,
@@ -154,14 +336,21 @@ serve(async (req) => {
           status: 'in-progress'
         })
         .eq('id', ticket.id)
+        .is('assigned_to', null)
+        .select()
 
       if (assignError) {
         console.error(`❌ Error assigning ticket ${ticket.id}:`, assignError)
         continue
       }
 
+      if (!updatedTicket || updatedTicket.length === 0) {
+        console.log(`ℹ️ Ticket ${ticket.id} already assigned by another process, skipping`)
+        continue
+      }
+
       // Insert system message
-      await supabase
+      const { error: messageError } = await supabase
         .from('messages')
         .insert([{
           ticket_id: ticket.id,
@@ -171,11 +360,20 @@ serve(async (req) => {
           sender_id: 'system'
         }])
 
+      if (messageError) {
+        console.error(`❌ Error inserting system message for ticket ${ticket.id} "${ticket.title}" assigned to ${moderator.name}:`, messageError)
+        // Continue with reassignment even if message fails
+      }
+
       // Send Discord notification
       try {
-        const DISCORD_WEBHOOK_MODERATOR = Deno.env.get('DISCORD_WEBHOOK_MODERATOR') || 'https://discord.com/api/webhooks/1468431833569034503/kKJAHqBigEk5bcj8KRwoCRTwtBUFUKjil0kH-fSY_ttokzbaMr-wSk82E7GaThsidjSL'
+        const DISCORD_WEBHOOK_MODERATOR = Deno.env.get('DISCORD_WEBHOOK_MODERATOR')
+        if (!DISCORD_WEBHOOK_MODERATOR) {
+          console.warn('⚠️ DISCORD_WEBHOOK_MODERATOR not configured, skipping notification')
+          reassignedCount++
+          continue
+        }
         const SITE_URL = Deno.env.get('SITE_URL') || 'http://localhost:3000'
-
         const discordMessage = {
           embeds: [{
             author: {
@@ -186,10 +384,9 @@ serve(async (req) => {
             color: 0x3B82F6,
             fields: [
               {
-                name: '� Ticket',
+                name: '🎫 Ticket',
                 value: `#${ticket.id.substring(0, 8)}`,
-                inline: true
-              },
+                inline: true              },
               {
                 name: '👤 Client',
                 value: ticket.client_name,

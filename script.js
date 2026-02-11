@@ -1919,7 +1919,7 @@ const SUPABASE_ANON_KEY = window.AppConfig?.supabase?.anonKey ||
                           'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5kbmlvc3JxZ3J6Y3NxbmZhYnhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk1NjEyNTAsImV4cCI6MjA4NTEzNzI1MH0.vu7GRZ-C-qdhPT8niHVOgz3E1Sxhv5hewi-GDSGR01w';
 
 // Debug Configuration
-const DEBUG = true; // localStorage.getItem('debug') === 'true';
+const DEBUG = localStorage.getItem('debug') === 'true';
 
 // Initialize Supabase client
 let supabaseClient = null;
@@ -1927,6 +1927,8 @@ let currentUser = null;
 let currentUserRole = null;
 let currentUserDbId = null; // Database UUID for the user
 let currentTicketId = null;
+let currentTicketClientId = null;
+let currentTicketStatus = null;
 let chatChannel = null;
 let ticketsChannel = null; // For real-time ticket updates
 let isInitialized = false; // Flag to prevent duplicate initialization
@@ -1968,8 +1970,14 @@ async function initializeTicketingSystem() {
             console.log('✅ Supabase read-only client already initialized');
         }
 
-        await loadUserRole();
+        const userActive = await loadUserRole();
         console.log('✅ User role loaded:', currentUserRole);
+
+        // If user is deactivated, stop initialization here
+        if (!userActive) {
+            console.log('🚫 User account is deactivated - stopping initialization');
+            return;
+        }
 
         await initializeUI();
         console.log('✅ UI initialized');
@@ -2023,7 +2031,7 @@ async function loadUserRole() {
             if (!userData.active) {
                 console.log('👤 User account is deactivated - showing blocked access message');
                 showBlockedAccessMessage();
-                return; // Don't proceed with role loading
+                return false; // Return false for deactivated users
             }
             currentUserRole = userData.role;
             currentUserDbId = userData.id;
@@ -2147,10 +2155,12 @@ async function loadUserRole() {
         
         // Refresh current user's Discord info to ensure avatars are up-to-date
         await refreshCurrentUserDiscordInfo();
+        return true; // Return true for active users
     } catch (error) {
         console.error('❌ Error in loadUserRole:', error);
         console.log('❌ Falling back to client role due to error');
         currentUserRole = 'client'; // Fallback
+        return true; // Allow initialization to continue with fallback role
     }
 }
 
@@ -2883,29 +2893,10 @@ async function callSecureEndpoint(functionName, payload = {}) {
 
         // Debug: Decode and log token details (only in debug mode)
         if (DEBUG) {
-            try {
-                const [headerB64, payloadB64] = token.split('.');
-                const decodeBase64 = (str) => {
-                    let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
-                    while (base64.length % 4) base64 += '=';
-                    return JSON.parse(atob(base64));
-                };
-                const header = decodeBase64(headerB64);
-                const payload = decodeBase64(payloadB64);
-                console.log('🔍 Token Header:', header);
-                console.log('🔍 Token Payload:', payload);
-                console.log('🔍 Token Claims:', {
-                    issuer: payload.iss,
-                    audience: payload.aud,
-                    subject: payload.sub,
-                    expiration: new Date(payload.exp * 1000).toISOString()
-                });
-            } catch (e) {
-                console.error('Failed to decode token:', e);
-            }
+            console.log('🔍 Token present and decoded successfully');
         }
 
-        console.log('✅ Got Clerk token, length:', token.length, 'first 50 chars:', token.substring(0, 50));
+        console.log('✅ Got Clerk token, length:', token.length);
 
         // Use fetch directly to ensure proper body sending
         const response = await fetch(`${SUPABASE_URL}/functions/v1/${functionName}`, {
@@ -3042,9 +3033,9 @@ async function createTicket() {
 
         // Send Discord notification (optional - won't affect user experience if it fails)
         // Note: This currently requires additional authentication setup
-        // notifyNewTicket(ticket).catch(err => {
-        //     console.warn('Discord notification not sent:', err.message);
-        // });
+        notifyNewTicket(ticket).catch(err => {
+            console.warn('Discord notification not sent:', err.message);
+        });
 
         showNotification('Ticket créé avec succès', 'success');
 
@@ -3156,21 +3147,7 @@ async function openTicketChat(ticketId) {
 
         const { data: ticket, error } = await supabaseClient
             .from('tickets')
-            .select(`
-                *,
-                messages (
-                    id,
-                    content,
-                    sender_type,
-                    sender_name,
-                    sender_avatar,
-                    created_at,
-                    file_url,
-                    file_name,
-                    file_type,
-                    file_size
-                )
-            `)
+            .select('*')
             .eq('id', ticketId)
             .single();
 
@@ -3185,7 +3162,24 @@ async function openTicketChat(ticketId) {
 
         console.log('✅ Ticket loaded successfully:', ticket.id);
 
+        // Load messages separately to avoid nested query issues
+        const { data: messages, error: messagesError } = await supabaseClient
+            .from('messages')
+            .select('id, content, sender_type, sender_name, sender_avatar, created_at, file_url, file_name, file_type, file_size')
+            .eq('ticket_id', ticketId)
+            .order('created_at', { ascending: true });
+
+        if (messagesError) {
+            console.error('❌ Error loading messages:', messagesError);
+            // Don't throw - we can still show the ticket without messages
+            ticket.messages = [];
+        } else {
+            ticket.messages = messages || [];
+        }
+
         currentTicketId = ticketId;
+        currentTicketClientId = ticket.client_id;
+        currentTicketStatus = ticket.status;
 
         // Update modal content
         document.getElementById('chat-ticket-title').textContent = ticket.title;
@@ -3193,7 +3187,7 @@ async function openTicketChat(ticketId) {
         document.getElementById('chat-ticket-status').className = `ticket-status ${ticket.status.toLowerCase().replace(' ', '-')}`;
 
         // Display messages
-        displayChatMessages(ticket.messages || []);
+        displayChatMessages(ticket.messages || [], ticket);
 
         // Subscribe to real-time updates for this ticket
         subscribeToTicketMessages(ticketId);
@@ -3201,6 +3195,9 @@ async function openTicketChat(ticketId) {
         // Mark messages as read immediately when opening chat for all users
         // Don't pass timestamp - always query for the absolute latest to avoid missing messages
         await markMessagesAsRead(ticketId, currentUserDbId);
+
+        // Update chat input state based on ticket status
+        updateChatInputState();
 
         // Show modal
         openModal('chat-modal');
@@ -3233,6 +3230,17 @@ async function loadMessagesForTicket(ticketId) {
     try {
         console.log('💬 Loading messages for ticket:', ticketId);
 
+        // Fetch ticket info to pass to displayChatMessages
+        const { data: ticket, error: ticketError } = await supabaseClient
+            .from('tickets')
+            .select('client_id')
+            .eq('id', ticketId)
+            .single();
+
+        if (ticketError) {
+            console.error('Error fetching ticket for messages:', ticketError);
+        }
+
         // Fetch messages from database
         const { data: messages, error } = await supabaseClient
             .from('messages')
@@ -3248,7 +3256,7 @@ async function loadMessagesForTicket(ticketId) {
         console.log('💬 Loaded', messages?.length || 0, 'messages for ticket:', ticketId);
 
         // Display messages in chat
-        displayChatMessages(messages || []);
+        displayChatMessages(messages || [], ticket);
     } catch (error) {
         console.error('Error in loadMessagesForTicket:', error);
         showNotification('Erreur lors du chargement des messages', 'error');
@@ -3256,13 +3264,37 @@ async function loadMessagesForTicket(ticketId) {
 }
 
 // Display a single message in the chat (for real-time updates)
-function displayMessageInChat(message) {
+async function displayMessageInChat(message) {
     console.log('💬 Displaying message in chat:', message.id);
 
-    // Filter system messages: only show them to clients, hide from moderators and admins
-    if (message.sender_type === 'system' && currentUserRole !== 'client') {
-        console.log('🚫 Skipping system message for non-client user');
-        return;
+    // For system messages, check if user should see them
+    if (message.sender_type === 'system') {
+        // Always fetch ticket client ID for system message filtering
+        let ticketClientId;
+        try {
+            const { data: ticket, error } = await supabaseClient
+                .from('tickets')
+                .select('client_id')
+                .eq('id', message.ticket_id)
+                .single();
+
+            if (error) {
+                console.error('Error fetching ticket for system message display:', error);
+                return; // Skip message if we can't determine access
+            }
+            ticketClientId = ticket.client_id;
+        } catch (error) {
+            console.error('Error in displayMessageInChat ticket fetch:', error);
+            return;
+        }
+
+        const isClientRole = currentUserRole === 'client';
+        const isTicketClient = currentUser && currentUser.id === ticketClientId;
+
+        if (!isClientRole && !isTicketClient) {
+            console.log('🚫 Skipping system message for non-client user');
+            return;
+        }
     }
 
     const messagesContainer = document.getElementById('chat-messages');
@@ -3286,17 +3318,21 @@ function displayMessageInChat(message) {
 }
 
 // Display chat messages
-async function displayChatMessages(messages) {
+async function displayChatMessages(messages, ticket = null) {
     const messagesContainer = document.getElementById('chat-messages');
     if (!messagesContainer) return;
 
     messagesContainer.innerHTML = '';
 
-    // Filter system messages: only show them to clients, hide from moderators and admins
+    // Filter system messages: show to clients or to the ticket client
     const filteredMessages = messages.filter(message => {
-        // If it's a system message and user is NOT a client, hide it
-        if (message.sender_type === 'system' && currentUserRole !== 'client') {
-            return false;
+        // If it's a system message, show it to users with client role or to the ticket client
+        if (message.sender_type === 'system') {
+            const isClientRole = currentUserRole === 'client';
+            const isTicketClient = ticket && currentUser && currentUser.id === ticket.client_id;
+            if (!isClientRole && !isTicketClient) {
+                return false;
+            }
         }
         return true;
     });
@@ -3912,6 +3948,20 @@ async function getUnreadMessageCount(ticketId, userId) {
             console.log('📊 Getting unread message count for ticket:', ticketId, 'user:', userId);
         }
 
+        // Get ticket info to check if user is the client
+        const { data: ticket, error: ticketError } = await supabaseClient
+            .from('tickets')
+            .select('client_id')
+            .eq('id', ticketId)
+            .single();
+
+        if (ticketError) {
+            console.error('Error fetching ticket for unread count:', ticketError);
+            return 0;
+        }
+
+        const isTicketClient = currentUser && currentUser.id === ticket.client_id;
+
         // First, try to get the last read timestamp
         let lastReadTimeString = null;
         const { data: readData, error: readError } = await supabaseClient
@@ -3968,8 +4018,8 @@ async function getUnreadMessageCount(ticketId, userId) {
                 .neq('sender_id', userId)
                 .gt('created_at', lastReadTimeString);
             
-            // Exclude system messages for moderators and admins
-            if (currentUserRole !== 'client') {
+            // Exclude system messages for moderators and admins (unless they are the ticket client)
+            if (currentUserRole !== 'client' && !isTicketClient) {
                 query = query.neq('sender_type', 'system');
             }
             
@@ -3991,8 +4041,8 @@ async function getUnreadMessageCount(ticketId, userId) {
                 .eq('ticket_id', ticketId)
                 .neq('sender_id', userId);
             
-            // Exclude system messages for moderators and admins
-            if (currentUserRole !== 'client') {
+            // Exclude system messages for moderators and admins (unless they are the ticket client)
+            if (currentUserRole !== 'client' && !isTicketClient) {
                 query = query.neq('sender_type', 'system');
             }
             
@@ -4245,9 +4295,9 @@ function initializeTypingIndicators(ticketId) {
 
     console.log('⌨️ Subscribed to typing events');
 
-    // Add input event listeners to message input
+    // Add input event listeners to message input - only attach once per element
     const messageInput = document.getElementById('messageInput');
-    if (messageInput) {
+    if (messageInput && !messageInput.dataset.typingListenersAttached) {
         console.log('⌨️ Found message input, adding event listeners');
         messageInput.addEventListener('input', (e) => {
             if (e.target.value.trim().length > 0) {
@@ -4263,6 +4313,11 @@ function initializeTypingIndicators(ticketId) {
                 stopTyping();
             }
         });
+
+        // Mark as attached to prevent duplicate listeners
+        messageInput.dataset.typingListenersAttached = 'true';
+    } else if (messageInput) {
+        console.log('⌨️ Message input already has typing listeners attached, skipping');
     } else {
         console.log('⌨️ Message input not found!');
     }
@@ -4295,6 +4350,12 @@ async function sendMessage() {
     const maxLength = 1000;
 
     if (!content || !currentTicketId) return;
+
+    // Check if ticket is closed
+    if (currentTicketStatus === 'closed') {
+        showNotification('Impossible d\'envoyer un message : ce ticket est fermé', 'error');
+        return;
+    }
 
     // Check character limit
     if (content.length > maxLength) {
@@ -4378,12 +4439,53 @@ function autoResizeTextarea() {
     messageInput.style.height = newHeight + 'px';
 }
 
+// Update chat input state based on ticket status
+function updateChatInputState() {
+    const messageInput = document.getElementById('messageInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const fileBtn = document.getElementById('fileBtn');
+    const fileInput = document.getElementById('fileInput');
+    
+    const isClosed = currentTicketStatus === 'closed';
+    
+    if (messageInput) {
+        messageInput.disabled = isClosed;
+        messageInput.placeholder = isClosed 
+            ? 'Ce ticket est fermé - impossible d\'envoyer des messages' 
+            : 'Tapez votre message...';
+    }
+    
+    if (sendBtn) {
+        sendBtn.disabled = isClosed;
+    }
+    
+    if (fileBtn) {
+        fileBtn.disabled = isClosed;
+        fileBtn.style.opacity = isClosed ? '0.5' : '1';
+        fileBtn.style.cursor = isClosed ? 'not-allowed' : 'pointer';
+    }
+    
+    if (fileInput) {
+        fileInput.disabled = isClosed;
+    }
+}
+
 // Handle file upload
 async function handleFileUpload(files) {
     if (!files || files.length === 0) return;
 
     if (!currentTicketId) {
         showNotification('Aucun ticket sélectionné', 'error');
+        return;
+    }
+
+    // Check if ticket is closed
+    if (currentTicketStatus === 'closed') {
+        showNotification('Impossible d\'envoyer un fichier : ce ticket est fermé', 'error');
+        const fileInput = document.getElementById('fileInput');
+        if (fileInput) {
+            fileInput.value = '';
+        }
         return;
     }
 
@@ -4641,6 +4743,34 @@ function subscribeToTicketMessages(ticketId) {
                 playNotificationSound();
             }
         })
+        .on('postgres_changes', {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'tickets',
+            filter: `id=eq.${ticketId}`
+        }, (payload) => {
+            console.log('🎫 Ticket status updated:', payload.new);
+            
+            // Update current ticket status
+            if (payload.new.status !== currentTicketStatus) {
+                currentTicketStatus = payload.new.status;
+                
+                // Update the status badge in the chat modal
+                const statusBadge = document.getElementById('chat-ticket-status');
+                if (statusBadge) {
+                    statusBadge.textContent = payload.new.status;
+                    statusBadge.className = `ticket-status ${payload.new.status.toLowerCase().replace(' ', '-')}`;
+                }
+                
+                // Update chat input state based on new status
+                updateChatInputState();
+                
+                // Show notification if ticket was closed
+                if (payload.new.status === 'closed') {
+                    showNotification('Ce ticket a été fermé', 'info');
+                }
+            }
+        })
         .subscribe();
 }
 
@@ -4674,9 +4804,8 @@ function checkIfTicketAffectsCurrentUser(payload) {
             return ticket.assigned_to === currentUser.id;
         } else if (payload.eventType === 'DELETE') {
             // If a ticket assigned to this moderator was deleted
-            return ticket.assigned_to === currentUserDbId;
-        }
-    } else if (currentUserRole === 'admin') {
+            return ticket.assigned_to === currentUser.id;
+        }    } else if (currentUserRole === 'admin') {
         // Admins care about all ticket changes
         return true;
     }
@@ -5411,12 +5540,12 @@ function createUserTableRow(user) {
 // Update user role
 async function updateUserRole(userId, newRole) {
     try {
-        const { error } = await supabaseClient
-            .from('users')
-            .update({ role: newRole })
-            .eq('id', userId);
-
-        if (error) throw error;
+        // Call secure server-side endpoint
+        const response = await callSecureEndpoint('manage-user', {
+            action: 'updateRole',
+            userId: userId,
+            newRole: newRole
+        });
 
         showNotification('Rôle mis à jour avec succès', 'success');
         await loadUsersList();
@@ -5469,16 +5598,11 @@ async function deleteUser(userId, userName) {
     try {
         console.log('🚫 Starting user deactivation for:', userId, userDisplayName);
 
-        // Set user as inactive
-        const { error: deactivateError } = await supabaseClient
-            .from('users')
-            .update({ active: false })
-            .eq('id', userId);
-
-        if (deactivateError) {
-            console.error('Error deactivating user:', deactivateError);
-            throw new Error('Erreur lors de la désactivation de l\'utilisateur');
-        }
+        // Call secure server-side endpoint
+        await callSecureEndpoint('manage-user', {
+            action: 'deactivate',
+            userId: userId
+        });
 
         console.log('✅ User deactivated successfully:', userDisplayName);
         showNotification(`Utilisateur "${userDisplayName}" désactivé avec succès. Il ne pourra plus accéder à l'application.`, 'success');
@@ -5509,16 +5633,11 @@ async function reactivateUser(userId, userName) {
     try {
         console.log('🔄 Starting user reactivation for:', userId, userDisplayName);
 
-        // Set user as active
-        const { error: reactivateError } = await supabaseClient
-            .from('users')
-            .update({ active: true })
-            .eq('id', userId);
-
-        if (reactivateError) {
-            console.error('Error reactivating user:', reactivateError);
-            throw new Error('Erreur lors de la réactivation de l\'utilisateur');
-        }
+        // Call secure server-side endpoint
+        await callSecureEndpoint('manage-user', {
+            action: 'reactivate',
+            userId: userId
+        });
 
         console.log('✅ User reactivated successfully:', userDisplayName);
         showNotification(`Utilisateur "${userDisplayName}" réactivé avec succès.`, 'success');
@@ -6418,22 +6537,46 @@ function showNotification(message, type = 'info') {
     // Create notification element
     const notification = document.createElement('div');
     notification.className = `notification fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg max-w-sm ${getNotificationClasses(type)}`;
-    
-    notification.innerHTML = `
-        <div class="flex items-center space-x-3">
-            <div class="flex-shrink-0">
-                <span class="material-icons-round text-lg">${getNotificationIcon(type)}</span>
-            </div>
-            <div class="flex-1">
-                <p class="text-sm font-medium">${message}</p>
-            </div>
-            <div class="flex-shrink-0">
-                <button class="text-current hover:opacity-75" onclick="this.parentElement.parentElement.parentElement.remove()">
-                    <span class="material-icons-round text-sm">close</span>
-                </button>
-            </div>
-        </div>
-    `;
+
+    // Create the notification content using DOM nodes for security
+    const flexContainer = document.createElement('div');
+    flexContainer.className = 'flex items-center space-x-3';
+
+    // Icon container
+    const iconContainer = document.createElement('div');
+    iconContainer.className = 'flex-shrink-0';
+    const iconSpan = document.createElement('span');
+    iconSpan.className = 'material-icons-round text-lg';
+    iconSpan.textContent = getNotificationIcon(type);
+    iconContainer.appendChild(iconSpan);
+
+    // Message container
+    const messageContainer = document.createElement('div');
+    messageContainer.className = 'flex-1';
+    const messagePara = document.createElement('p');
+    messagePara.className = 'text-sm font-medium';
+    messagePara.textContent = message; // Safe text insertion
+    messageContainer.appendChild(messagePara);
+
+    // Close button container
+    const closeContainer = document.createElement('div');
+    closeContainer.className = 'flex-shrink-0';
+    const closeButton = document.createElement('button');
+    closeButton.className = 'text-current hover:opacity-75';
+    closeButton.onclick = function() {
+        this.parentElement.parentElement.parentElement.remove();
+    };
+    const closeIcon = document.createElement('span');
+    closeIcon.className = 'material-icons-round text-sm';
+    closeIcon.textContent = 'close';
+    closeButton.appendChild(closeIcon);
+    closeContainer.appendChild(closeButton);
+
+    // Assemble the structure
+    flexContainer.appendChild(iconContainer);
+    flexContainer.appendChild(messageContainer);
+    flexContainer.appendChild(closeContainer);
+    notification.appendChild(flexContainer);
 
     // Add to page
     document.body.appendChild(notification);

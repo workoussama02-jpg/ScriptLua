@@ -30,7 +30,7 @@
         
         // Inject Clerk script with correct key
         const clerkScript = document.createElement('script');
-        clerkScript.src = 'https://cdn.jsdelivr.net/npm/@clerk/clerk-js@latest/dist/clerk.browser.js';
+        clerkScript.src = 'https://cdn.jsdelivr.net/npm/@clerk/clerk-js@5/dist/clerk.browser.js';
         clerkScript.async = true;
         clerkScript.crossOrigin = 'anonymous';
         clerkScript.type = 'text/javascript';
@@ -1052,7 +1052,7 @@ Ajouter
             `;
         }
 
-        function saveInternalNote(noteId) {
+        async function saveInternalNote(noteId) {
             const noteElement = document.querySelector(`[data-note-id="${noteId}"]`);
             if (!noteElement) return;
 
@@ -1068,57 +1068,44 @@ Ajouter
             const actionsElement = noteElement.querySelector('.note-actions');
             actionsElement.innerHTML = '<span class="text-sm text-slate-500">Sauvegarde...</span>';
 
-            // Use the secure endpoint function
-            if (window.callSecureEndpoint) {
-                window.callSecureEndpoint('update-internal-note', {
-                    noteId: noteId,
-                    content: newContent
-                }).then(data => {
-                    if (data.success) {
-                        updateInternalNoteDisplay(noteId, newContent);
-                        console.log('Note updated successfully');
-                    } else {
-                        alert('Erreur lors de la sauvegarde: ' + (data.error || 'Erreur inconnue'));
-                        // Restore edit mode on error
-                        updateInternalNoteDisplay(noteId, noteElement.querySelector('textarea').value);
-                    }
-                }).catch(error => {
-                    console.error('Error updating note:', error);
-                    alert('Erreur lors de la sauvegarde de la note');
-                    // Restore edit mode on error
-                    updateInternalNoteDisplay(noteId, noteElement.querySelector('textarea').value);
-                });
-            } else {
-                // Fallback to direct fetch if callSecureEndpoint is not available
-                fetch(`${window._env_.VITE_SUPABASE_URL}/functions/v1/update-internal-note`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${window._env_.VITE_SUPABASE_ANON_KEY}`,
-                        'x-clerk-token': window.Clerk?.session?.getToken() || ''
-                    },
-                    body: JSON.stringify({
+            try {
+                let data;
+                if (window.callSecureEndpoint) {
+                    data = await window.callSecureEndpoint('update-internal-note', {
                         noteId: noteId,
                         content: newContent
-                    })
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        updateInternalNoteDisplay(noteId, newContent);
-                        console.log('Note updated successfully');
-                    } else {
-                        alert('Erreur lors de la sauvegarde: ' + (data.error || 'Erreur inconnue'));
-                        // Restore edit mode on error
-                        updateInternalNoteDisplay(noteId, noteElement.querySelector('textarea').value);
-                    }
-                })
-                .catch(error => {
-                    console.error('Error updating note:', error);
-                    alert('Erreur lors de la sauvegarde de la note');
+                    });
+                } else {
+                    // Fallback to direct fetch if callSecureEndpoint is not available
+                    const clerkToken = await window.Clerk?.session?.getToken().catch(() => '');
+                    const response = await fetch(`${window._env_.VITE_SUPABASE_URL}/functions/v1/update-internal-note`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${window._env_.VITE_SUPABASE_ANON_KEY}`,
+                            'x-clerk-token': clerkToken || ''
+                        },
+                        body: JSON.stringify({
+                            noteId: noteId,
+                            content: newContent
+                        })
+                    });
+                    data = await response.json();
+                }
+
+                if (data.success) {
+                    updateInternalNoteDisplay(noteId, newContent);
+                    console.log('Note updated successfully');
+                } else {
+                    alert('Erreur lors de la sauvegarde: ' + (data.error || 'Erreur inconnue'));
                     // Restore edit mode on error
                     updateInternalNoteDisplay(noteId, noteElement.querySelector('textarea').value);
-                });
+                }
+            } catch (error) {
+                console.error('Error updating note:', error);
+                alert('Erreur lors de la sauvegarde de la note');
+                // Restore edit mode on error
+                updateInternalNoteDisplay(noteId, noteElement.querySelector('textarea').value);
             }
         }
 
@@ -1149,7 +1136,7 @@ Ajouter
             `;
         }
 
-        function deleteInternalNote(noteId) {
+        async function deleteInternalNote(noteId) {
             if (!confirm('Êtes-vous sûr de vouloir supprimer cette note ?')) return;
 
             const noteElement = document.querySelector(`[data-note-id="${noteId}"]`);
@@ -1159,108 +1146,47 @@ Ajouter
             const actionsElement = noteElement.querySelector('.note-actions');
             actionsElement.innerHTML = '<span class="text-sm text-slate-500">Suppression...</span>';
 
-            // Use the secure endpoint function
-            if (window.callSecureEndpoint) {
-                window.callSecureEndpoint('delete-internal-note', {
-                    noteId: noteId
-                }).then(data => {
-                    if (data.success) {
-                        // Remove the note element
-                        noteElement.remove();
-
-                        // Check if no notes left
-                        const notesList = document.getElementById('internalNotesList');
-                        const notes = notesList.querySelectorAll('[data-note-id]');
-                        if (notes.length === 0) {
-                            notesList.innerHTML = `
-                                <div class="text-center text-slate-500 dark:text-slate-400 py-8">
-                                    <p class="text-sm">Aucune note interne</p>
-                                </div>
-                            `;
-                        }
-
-                        console.log('Note deleted successfully');
-                    } else {
-                        alert('Erreur lors de la suppression: ' + (data.error || 'Erreur inconnue'));
-                        // Restore actions on error
-                        const actionsElement = noteElement.querySelector('.note-actions');
-                        actionsElement.innerHTML = `
-                            <button onclick="editInternalNote('${noteId}', '${noteElement.querySelector('.note-content p').textContent.replace(/'/g, "\\'").replace(/"/g, '\\"')}')" class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 text-sm font-medium mr-2">
-                                <span class="material-icons-round text-sm mr-1">edit</span>
-                                Modifier
-                            </button>
-                            <button onclick="deleteInternalNote('${noteId}')" class="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 text-sm font-medium">
-                                <span class="material-icons-round text-sm mr-1">delete</span>
-                                Supprimer
-                            </button>
-                        `;
-                    }
-                }).catch(error => {
-                    console.error('Error deleting note:', error);
-                    alert('Erreur lors de la suppression de la note');
-                    // Restore actions on error
-                    const actionsElement = noteElement.querySelector('.note-actions');
-                    actionsElement.innerHTML = `
-                        <button onclick="editInternalNote('${noteId}', '${noteElement.querySelector('.note-content p').textContent.replace(/'/g, "\\'").replace(/"/g, '\\"')}')" class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 text-sm font-medium mr-2">
-                            <span class="material-icons-round text-sm mr-1">edit</span>
-                            Modifier
-                        </button>
-                        <button onclick="deleteInternalNote('${noteId}')" class="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 text-sm font-medium">
-                            <span class="material-icons-round text-sm mr-1">delete</span>
-                            Supprimer
-                        </button>
-                    `;
-                });
-            } else {
-                // Fallback to direct fetch if callSecureEndpoint is not available
-                fetch(`${window._env_.VITE_SUPABASE_URL}/functions/v1/delete-internal-note`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${window._env_.VITE_SUPABASE_ANON_KEY}`,
-                        'x-clerk-token': window.Clerk?.session?.getToken() || ''
-                    },
-                    body: JSON.stringify({
+            try {
+                let data;
+                if (window.callSecureEndpoint) {
+                    data = await window.callSecureEndpoint('delete-internal-note', {
                         noteId: noteId
-                    })
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        // Remove the note element
-                        noteElement.remove();
+                    });
+                } else {
+                    // Fallback to direct fetch if callSecureEndpoint is not available
+                    const clerkToken = await window.Clerk?.session?.getToken().catch(() => '');
+                    const response = await fetch(`${window._env_.VITE_SUPABASE_URL}/functions/v1/delete-internal-note`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${window._env_.VITE_SUPABASE_ANON_KEY}`,
+                            'x-clerk-token': clerkToken || ''
+                        },
+                        body: JSON.stringify({
+                            noteId: noteId
+                        })
+                    });
+                    data = await response.json();
+                }
 
-                        // Check if no notes left
-                        const notesList = document.getElementById('internalNotesList');
-                        const notes = notesList.querySelectorAll('[data-note-id]');
-                        if (notes.length === 0) {
-                            notesList.innerHTML = `
-                                <div class="text-center text-slate-500 dark:text-slate-400 py-8">
-                                    <p class="text-sm">Aucune note interne</p>
-                                </div>
-                            `;
-                        }
+                if (data.success) {
+                    // Remove the note element
+                    noteElement.remove();
 
-                        console.log('Note deleted successfully');
-                    } else {
-                        alert('Erreur lors de la suppression: ' + (data.error || 'Erreur inconnue'));
-                        // Restore actions on error
-                        const actionsElement = noteElement.querySelector('.note-actions');
-                        actionsElement.innerHTML = `
-                            <button onclick="editInternalNote('${noteId}', '${noteElement.querySelector('.note-content p').textContent.replace(/'/g, "\\'").replace(/"/g, '\\"')}')" class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 text-sm font-medium mr-2">
-                                <span class="material-icons-round text-sm mr-1">edit</span>
-                                Modifier
-                            </button>
-                            <button onclick="deleteInternalNote('${noteId}')" class="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 text-sm font-medium">
-                                <span class="material-icons-round text-sm mr-1">delete</span>
-                                Supprimer
-                            </button>
+                    // Check if no notes left
+                    const notesList = document.getElementById('internalNotesList');
+                    const notes = notesList.querySelectorAll('[data-note-id]');
+                    if (notes.length === 0) {
+                        notesList.innerHTML = `
+                            <div class="text-center text-slate-500 dark:text-slate-400 py-8">
+                                <p class="text-sm">Aucune note interne</p>
+                            </div>
                         `;
                     }
-                })
-                .catch(error => {
-                    console.error('Error deleting note:', error);
-                    alert('Erreur lors de la suppression de la note');
+
+                    console.log('Note deleted successfully');
+                } else {
+                    alert('Erreur lors de la suppression: ' + (data.error || 'Erreur inconnue'));
                     // Restore actions on error
                     const actionsElement = noteElement.querySelector('.note-actions');
                     actionsElement.innerHTML = `
@@ -1273,7 +1199,22 @@ Ajouter
                             Supprimer
                         </button>
                     `;
-                });
+                }
+            } catch (error) {
+                console.error('Error deleting note:', error);
+                alert('Erreur lors de la suppression de la note');
+                // Restore actions on error
+                const actionsElement = noteElement.querySelector('.note-actions');
+                actionsElement.innerHTML = `
+                    <button onclick="editInternalNote('${noteId}', '${noteElement.querySelector('.note-content p').textContent.replace(/'/g, "\\'").replace(/"/g, '\\"')}')" class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-red-300 text-sm font-medium mr-2">
+                        <span class="material-icons-round text-sm mr-1">edit</span>
+                        Modifier
+                    </button>
+                    <button onclick="deleteInternalNote('${noteId}')" class="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 text-sm font-medium">
+                        <span class="material-icons-round text-sm mr-1">delete</span>
+                        Supprimer
+                    </button>
+                `;
             }
         }
 
@@ -1291,28 +1232,59 @@ Ajouter
             noteElement.className = 'bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-600 p-4 mb-3';
             noteElement.setAttribute('data-note-id', noteId);
 
-            noteElement.innerHTML = `
-                <div class="flex items-start justify-between mb-2">
-                    <div class="flex items-center space-x-2">
-                        <span class="text-xs font-medium text-slate-600 dark:text-slate-400">${author}</span>
-                        <span class="text-xs text-slate-500 dark:text-slate-500">•</span>
-                        <span class="text-xs text-slate-500 dark:text-slate-500">${timestamp}</span>
-                    </div>
-                </div>
-                <div class="note-content mb-3">
-                    <p class="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap">${content}</p>
-                </div>
-                <div class="note-actions flex items-center">
-                    <button onclick="editInternalNote('${noteId}', '${content.replace(/'/g, "\\'").replace(/"/g, '\\"')}')" class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 text-sm font-medium mr-2">
-                        <span class="material-icons-round text-sm mr-1">edit</span>
-                        Modifier
-                    </button>
-                    <button onclick="deleteInternalNote('${noteId}')" class="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 text-sm font-medium">
-                        <span class="material-icons-round text-sm mr-1">delete</span>
-                        Supprimer
-                    </button>
-                </div>
-            `;
+            // Create header div
+            const headerDiv = document.createElement('div');
+            headerDiv.className = 'flex items-start justify-between mb-2';
+            const infoDiv = document.createElement('div');
+            infoDiv.className = 'flex items-center space-x-2';
+            const authorSpan = document.createElement('span');
+            authorSpan.className = 'text-xs font-medium text-slate-600 dark:text-slate-400';
+            authorSpan.textContent = author;
+            const dotSpan = document.createElement('span');
+            dotSpan.className = 'text-xs text-slate-500 dark:text-slate-500';
+            dotSpan.textContent = '•';
+            const timeSpan = document.createElement('span');
+            timeSpan.className = 'text-xs text-slate-500 dark:text-slate-500';
+            timeSpan.textContent = timestamp;
+            infoDiv.appendChild(authorSpan);
+            infoDiv.appendChild(dotSpan);
+            infoDiv.appendChild(timeSpan);
+            headerDiv.appendChild(infoDiv);
+            noteElement.appendChild(headerDiv);
+
+            // Create content div
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'note-content mb-3';
+            const contentP = document.createElement('p');
+            contentP.className = 'text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap';
+            contentP.textContent = content;
+            contentDiv.appendChild(contentP);
+            noteElement.appendChild(contentDiv);
+
+            // Create actions div
+            const actionsDiv = document.createElement('div');
+            actionsDiv.className = 'note-actions flex items-center';
+            // Edit button
+            const editBtn = document.createElement('button');
+            editBtn.className = 'text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 text-sm font-medium mr-2';
+            const editIcon = document.createElement('span');
+            editIcon.className = 'material-icons-round text-sm mr-1';
+            editIcon.textContent = 'edit';
+            editBtn.appendChild(editIcon);
+            editBtn.appendChild(document.createTextNode('Modifier'));
+            editBtn.addEventListener('click', () => editInternalNote(noteId, content));
+            // Delete button
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 text-sm font-medium';
+            const deleteIcon = document.createElement('span');
+            deleteIcon.className = 'material-icons-round text-sm mr-1';
+            deleteIcon.textContent = 'delete';
+            deleteBtn.appendChild(deleteIcon);
+            deleteBtn.appendChild(document.createTextNode('Supprimer'));
+            deleteBtn.addEventListener('click', () => deleteInternalNote(noteId));
+            actionsDiv.appendChild(editBtn);
+            actionsDiv.appendChild(deleteBtn);
+            noteElement.appendChild(actionsDiv);
 
             notesList.appendChild(noteElement);
         }
